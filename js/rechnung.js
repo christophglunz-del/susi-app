@@ -153,6 +153,18 @@ const RechnungModule = {
                 ${this.naechsterStatusLabel(r.status)}
               </button>
             ` : ''}
+            ${!r.lexofficeInvoiceId && typeof LexofficeAPI !== 'undefined' ? `
+              <button class="btn btn-sm btn-outline" onclick="RechnungModule.inLexofficeErstellen(${r.id})"
+                      style="color: var(--primary); border-color: var(--primary);">
+                📤 In Lexoffice erstellen
+              </button>
+            ` : ''}
+            ${r.lexofficeInvoiceId ? `
+              <button class="btn btn-sm btn-outline" onclick="RechnungModule.lexofficePdfLaden(${r.id})"
+                      style="color: var(--success); border-color: var(--success);">
+                📄 Lexoffice-PDF
+              </button>
+            ` : ''}
             <button class="btn btn-sm btn-secondary" onclick="RechnungModule.loeschen(${r.id})">
               Löschen
             </button>
@@ -319,6 +331,181 @@ const RechnungModule = {
   versandartLabel(art) {
     const labels = { 'fax': 'Fax (Sipgate)', 'brief': 'Brief (LetterXpress)', 'webmail': 'Webmail' };
     return labels[art] || art;
+  },
+
+  // =============================================
+  // Lexoffice-Integration
+  // =============================================
+
+  /**
+   * Rechnung in Lexoffice erstellen und finalisieren
+   * @param {number} rechnungId - Lokale Rechnungs-ID
+   */
+  async inLexofficeErstellen(rechnungId) {
+    // Lexoffice initialisieren
+    if (typeof LexofficeAPI === 'undefined') {
+      App.toast('Lexoffice-Modul nicht geladen', 'error');
+      return;
+    }
+
+    if (!LexofficeAPI.istKonfiguriert()) {
+      await LexofficeAPI.init();
+    }
+    if (!LexofficeAPI.istKonfiguriert()) {
+      App.toast('Lexoffice API-Key fehlt — bitte in Einstellungen hinterlegen', 'error');
+      return;
+    }
+
+    // Rechnung und zugehörige Daten laden
+    const rechnung = await db.rechnungen.get(rechnungId);
+    if (!rechnung) {
+      App.toast('Rechnung nicht gefunden', 'error');
+      return;
+    }
+
+    if (rechnung.lexofficeInvoiceId) {
+      App.toast('Rechnung ist bereits in Lexoffice vorhanden', 'info');
+      return;
+    }
+
+    const kunde = await DB.kundeById(rechnung.kundeId);
+    if (!kunde) {
+      App.toast('Kunde nicht gefunden', 'error');
+      return;
+    }
+
+    const leistungen = await DB.leistungenFuerMonat(rechnung.monat, rechnung.jahr);
+    const kundeLeistungen = leistungen.filter(l => l.kundeId === rechnung.kundeId);
+
+    if (kundeLeistungen.length === 0) {
+      App.toast('Keine Leistungen für diesen Monat gefunden', 'error');
+      return;
+    }
+
+    try {
+      App.toast('Rechnung wird in Lexoffice erstellt...', 'info');
+
+      // 1. Rechnungsdaten im Lexoffice-Format aufbereiten
+      const lexDaten = LexofficeAPI.rechnungZuLexoffice(rechnung, kunde, kundeLeistungen);
+
+      // 2. Rechnung in Lexoffice erstellen
+      const ergebnis = await LexofficeAPI.createInvoice(lexDaten);
+      if (!ergebnis.id) {
+        throw new Error('Keine Rechnungs-ID von Lexoffice erhalten');
+      }
+
+      console.log('Lexoffice Rechnung erstellt:', ergebnis.id);
+
+      // 3. Rechnung finalisieren (Rechnungsnummer wird vergeben, PDF generiert)
+      const dokument = await LexofficeAPI.finalizeInvoice(ergebnis.id);
+      console.log('Lexoffice Rechnung finalisiert:', dokument);
+
+      // 4. Lokale Rechnung mit Lexoffice-ID aktualisieren
+      const updateDaten = {
+        lexofficeInvoiceId: ergebnis.id
+      };
+
+      // documentFileId speichern falls vorhanden (für PDF-Download)
+      if (dokument && dokument.documentFileId) {
+        updateDaten.lexofficeDocumentFileId = dokument.documentFileId;
+      }
+
+      await DB.rechnungAktualisieren(rechnungId, updateDaten);
+
+      App.toast('Rechnung erfolgreich in Lexoffice erstellt!', 'success');
+
+      // 5. PDF automatisch herunterladen falls documentFileId vorhanden
+      if (dokument && dokument.documentFileId) {
+        await this._lexofficePdfAnzeigen(dokument.documentFileId, rechnung, kunde);
+      }
+
+      // Liste aktualisieren
+      this.listeAnzeigen();
+
+    } catch (err) {
+      console.error('Lexoffice Rechnungserstellung fehlgeschlagen:', err);
+      App.toast('Lexoffice-Fehler: ' + err.message, 'error', 5000);
+    }
+  },
+
+  /**
+   * PDF einer bestehenden Lexoffice-Rechnung laden und anzeigen
+   * @param {number} rechnungId - Lokale Rechnungs-ID
+   */
+  async lexofficePdfLaden(rechnungId) {
+    if (typeof LexofficeAPI === 'undefined') {
+      App.toast('Lexoffice-Modul nicht geladen', 'error');
+      return;
+    }
+
+    if (!LexofficeAPI.istKonfiguriert()) {
+      await LexofficeAPI.init();
+    }
+
+    const rechnung = await db.rechnungen.get(rechnungId);
+    if (!rechnung || !rechnung.lexofficeInvoiceId) {
+      App.toast('Keine Lexoffice-Rechnung vorhanden', 'error');
+      return;
+    }
+
+    const kunde = await DB.kundeById(rechnung.kundeId);
+
+    try {
+      App.toast('PDF wird geladen...', 'info');
+
+      // documentFileId abrufen falls nicht gespeichert
+      let fileId = rechnung.lexofficeDocumentFileId;
+      if (!fileId) {
+        const dokument = await LexofficeAPI.finalizeInvoice(rechnung.lexofficeInvoiceId);
+        fileId = dokument.documentFileId;
+        if (fileId) {
+          await DB.rechnungAktualisieren(rechnungId, { lexofficeDocumentFileId: fileId });
+        }
+      }
+
+      if (!fileId) {
+        App.toast('Rechnungs-PDF noch nicht verfügbar', 'error');
+        return;
+      }
+
+      await this._lexofficePdfAnzeigen(fileId, rechnung, kunde);
+
+    } catch (err) {
+      console.error('PDF-Download fehlgeschlagen:', err);
+      App.toast('PDF-Download fehlgeschlagen: ' + err.message, 'error');
+    }
+  },
+
+  /**
+   * Lexoffice-PDF in Vorschau anzeigen und Download anbieten
+   */
+  async _lexofficePdfAnzeigen(documentFileId, rechnung, kunde) {
+    try {
+      const pdfBlob = await LexofficeAPI.getInvoicePdf(documentFileId);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      // PDF in neuem Tab öffnen (Vorschau)
+      window.open(pdfUrl, '_blank');
+
+      // Auch Download anbieten
+      const kundenName = (kunde && kunde.name) ? kunde.name.replace(/\s+/g, '_') : 'Kunde';
+      const dateiname = `Rechnung_Lexoffice_${kundenName}_${App.monatsName(rechnung.monat)}_${rechnung.jahr}.pdf`;
+
+      const a = document.createElement('a');
+      a.href = pdfUrl;
+      a.download = dateiname;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // URL nach kurzer Zeit freigeben
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 10000);
+
+      App.toast('Lexoffice-PDF geladen', 'success');
+    } catch (err) {
+      console.error('PDF-Anzeige fehlgeschlagen:', err);
+      App.toast('PDF konnte nicht angezeigt werden', 'error');
+    }
   }
 };
 

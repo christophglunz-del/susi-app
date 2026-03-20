@@ -13,6 +13,7 @@ const SettingsModule = {
 
     // Gespeicherte Einstellungen laden
     const lexofficeKey = await DB.settingLesen('lexoffice_api_key') || '';
+    const lexofficeProxy = await DB.settingLesen('lexoffice_proxy_url') || '';
     const sipgateUser = await DB.settingLesen('sipgate_user') || '';
     const sipgatePass = await DB.settingLesen('sipgate_pass') || '';
     const letterxpressUser = await DB.settingLesen('letterxpress_user') || '';
@@ -77,6 +78,13 @@ const SettingsModule = {
           <input type="password" id="settLexoffice" class="form-control"
                  value="${lexofficeKey}" placeholder="API-Schlüssel eingeben">
           <div class="form-hint">Für automatische Rechnungserstellung</div>
+        </div>
+
+        <div class="form-group">
+          <label for="settLexofficeProxy">Lexoffice Proxy-URL (optional)</label>
+          <input type="url" id="settLexofficeProxy" class="form-control"
+                 value="${lexofficeProxy}" placeholder="z.B. https://mein-proxy.example.com/lexoffice">
+          <div class="form-hint">Nötig wegen CORS — leer lassen für direkten Zugriff (z.B. mit Browser-Extension)</div>
         </div>
 
         <div class="form-group">
@@ -167,6 +175,7 @@ const SettingsModule = {
   async apiKeysSpeichern() {
     try {
       await DB.settingSpeichern('lexoffice_api_key', document.getElementById('settLexoffice').value);
+      await DB.settingSpeichern('lexoffice_proxy_url', document.getElementById('settLexofficeProxy').value.trim());
       await DB.settingSpeichern('sipgate_user', document.getElementById('settSipgateUser').value);
       await DB.settingSpeichern('sipgate_pass', document.getElementById('settSipgatePass').value);
       await DB.settingSpeichern('letterxpress_user', document.getElementById('settLetterxpressUser').value);

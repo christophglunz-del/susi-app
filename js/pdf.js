@@ -359,111 +359,213 @@ const PDFHelper = {
   },
 
   /**
-   * Abtretungserklärung PDF
+   * Vollmacht & Abtretungserklärung PDF (2 Seiten DIN A4)
    */
   async generateAbtretung(abtretung, kunde) {
     const doc = this.createDoc();
     const pageWidth = doc.internal.pageSize.getWidth();
+    const textWidth = pageWidth - 30;
+    const LH = 4.5; // Zeilenhöhe
     let y = this.addLetterhead(doc);
 
-    // Empfänger (Pflegekasse)
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...this.BLACK);
-    doc.text(kunde.pflegekasse || 'Pflegekasse', 15, y);
-    y += 5;
-    if (kunde.faxKasse) {
-      doc.text(`Fax: ${kunde.faxKasse}`, 15, y);
-      y += 5;
-    }
-    y += 10;
-
-    // Datum
-    doc.text(`${abtretung.ort || 'Hattingen'}, den ${App.formatDatum(abtretung.datum)}`, pageWidth - 15, y, { align: 'right' });
-    y += 15;
+    // === SEITE 1 ===
 
     // Titel
-    doc.setFontSize(13);
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('Abtretungserklärung', pageWidth / 2, y, { align: 'center' });
-    y += 8;
-
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text('gemäß § 45b Abs. 1 Satz 3 SGB XI', pageWidth / 2, y, { align: 'center' });
-    y += 12;
-
-    // Haupttext
-    doc.setFontSize(10);
-    doc.text('Hiermit trete ich,', 15, y);
-    y += 8;
-
-    // Versicherten-Daten
-    doc.setFont('helvetica', 'bold');
-    doc.text(kunde.name || '____________', 15, y); y += 5;
-    doc.setFont('helvetica', 'normal');
-    const gebDatum = kunde.geburtstag ? App.formatDatum(kunde.geburtstag) : '____________';
-    doc.text(`geb. am ${gebDatum}`, 15, y); y += 5;
-    const adresse = [kunde.strasse, kunde.plz, kunde.ort].filter(Boolean).join(', ') || '____________';
-    doc.text(`wohnhaft: ${adresse}`, 15, y); y += 5;
-    doc.text(`Versichertennummer: ${kunde.versichertennummer || '____________'}`, 15, y); y += 5;
-    doc.text(`Pflegekasse: ${kunde.pflegekasse || '____________'}`, 15, y); y += 8;
-
-    const text1 = 'den mir zustehenden Anspruch auf Erstattung von Aufwendungen im Rahmen des ' +
-      'Entlastungsbetrages gemäß § 45b Abs. 1 Satz 3 SGB XI in Höhe von bis zu 125,00 Euro ' +
-      'monatlich an den nachfolgend genannten zugelassenen Leistungserbringer ab:';
-    const lines1 = doc.splitTextToSize(text1, pageWidth - 30);
-    doc.text(lines1, 15, y);
-    y += lines1.length * 5 + 10;
-
-    // Leistungserbringer
-    doc.setFont('helvetica', 'bold');
-    doc.text('Leistungserbringer:', 15, y);
+    doc.setTextColor(...this.BLACK);
+    doc.text('Vollmacht & Abtretungserklärung', pageWidth / 2, y, { align: 'center' });
     y += 6;
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(FIRMA.name, 15, y); y += 5;
-    doc.text(FIRMA.inhaber, 15, y); y += 5;
-    doc.text(FIRMA.strasse, 15, y); y += 5;
-    doc.text(`${FIRMA.plz} ${FIRMA.ort}`, 15, y); y += 5;
-    doc.text(`IK-Nummer: ${FIRMA.ikNummer}`, 15, y); y += 10;
+    const subtitle = 'zur Vertretung gegenüber der Pflegekasse sowie zur Direktabrechnung/Direktzahlung';
+    doc.text(subtitle, pageWidth / 2, y, { align: 'center' });
+    y += 5;
+    doc.text('(\u00A7\u00A039 SGB XI Verhinderungspflege und \u00A7\u00A045b SGB XI Entlastungsbetrag)', pageWidth / 2, y, { align: 'center' });
+    y += 8;
 
-    // Einverständnis
-    const text2 = 'Ich erkläre mein Einverständnis, dass der Leistungserbringer die Abrechnung der ' +
-      'von mir in Anspruch genommenen Leistungen direkt mit meiner Pflegekasse vornimmt.';
-    const lines2 = doc.splitTextToSize(text2, pageWidth - 30);
-    doc.text(lines2, 15, y);
-    y += lines2.length * 5 + 8;
-
-    const text3 = 'Diese Abtretungserklärung gilt bis auf Widerruf. Ein Widerruf ist jederzeit in Textform möglich.';
-    const lines3 = doc.splitTextToSize(text3, pageWidth - 30);
-    doc.text(lines3, 15, y);
-    y += lines3.length * 5 + 25;
-
-    // Unterschriften — Wert ÜBER der Linie, Beschriftung DARUNTER
     doc.setDrawColor(...this.GRAY);
-    doc.setLineWidth(0.2);
+    doc.setLineWidth(0.3);
+    doc.line(15, y, pageWidth - 15, y);
+    y += 6;
 
-    // Ort/Datum-Wert über der Linie
+    // Empfänger (Pflegekasse)
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Empfänger (Pflegekasse):', 15, y);
+    y += LH;
+    doc.setFont('helvetica', 'normal');
+    doc.text(kunde.pflegekasse || '____________', 15, y);
+    y += LH;
+    doc.text(kunde.pflegekasseAdresse || '', 15, y);
+    y += 8;
+
+    doc.line(15, y, pageWidth - 15, y);
+    y += 6;
+
+    // 1) Pflegebedürftige Person
+    doc.setFont('helvetica', 'bold');
+    doc.text('1) Pflegebedürftige/versicherte Person (Vollmachtgeberin / abtretende Person)', 15, y);
+    y += LH + 1;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Name, Vorname: ${kunde.name || '____________'}`, 15, y); y += LH;
+    const adresse = [kunde.strasse, kunde.plz, kunde.ort].filter(Boolean).join(', ') || '____________';
+    doc.text(`Anschrift: ${adresse}`, 15, y); y += LH;
+    doc.text(`Versichertennummer: ${kunde.versichertennummer || '____________'}`, 15, y);
+    y += 8;
+
+    doc.line(15, y, pageWidth - 15, y);
+    y += 6;
+
+    // 2) Bevollmächtigte
+    doc.setFont('helvetica', 'bold');
+    doc.text('2) Bevollmächtigte / Abtretungsempfängerin (Leistungserbringerin)', 15, y);
+    y += LH + 1;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${FIRMA.name} \u2013 ${FIRMA.inhaber}`, 15, y); y += LH;
+    doc.text(`Anschrift: ${FIRMA.strasse}, ${FIRMA.plz} ${FIRMA.ort}`, 15, y); y += LH;
+    doc.text(`Telefon: ${FIRMA.telefon || '015560117030'}`, 15, y); y += LH;
+    doc.text(`E-Mail: ${FIRMA.email || 'hallo@susisalltagshilfe.de'}`, 15, y); y += LH;
+    doc.text(`IK-Nummer: ${FIRMA.ikNummer}`, 15, y); y += LH;
+    doc.text(`Angebots-ID: ${FIRMA.angebotsId || '080123F8M2'}`, 15, y); y += LH;
+    doc.text('Status: Anerkannter Anbieter von Entlastungsleistungen nach AnFöVO NRW (\u00A7\u00A045a SGB XI)', 15, y);
+    y += LH + 2;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Bankverbindung für Direktzahlung:', 15, y);
+    y += LH + 1;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Kontoinhaberin: ${FIRMA.inhaber}`, 15, y); y += LH;
+    doc.text(`IBAN: ${FIRMA.iban || 'DE69 4526 1547 0152 4789 01'}`, 15, y); y += LH;
+    doc.text(`BIC: ${FIRMA.bic || 'GENODEM1SPO'}`, 15, y); y += LH;
+    doc.text(`Bank: ${FIRMA.bank || 'Volksbank Sprockhövel'}`, 15, y);
+    y += 8;
+
+    doc.line(15, y, pageWidth - 15, y);
+    y += 6;
+
+    // A) VOLLMACHT
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text(`${abtretung.ort || 'Hattingen'}, ${App.formatDatum(abtretung.datum)}`, 15, y - 3);
+    doc.text('A) VOLLMACHT', 15, y);
+    y += LH + 2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
 
-    // Unterschriftsbild über der rechten Linie
+    const vollmachtText = `Hiermit bevollmächtige ich, ${kunde.name || '____________'}, die unter Ziffer 2 genannte Person ` +
+      `(${FIRMA.name} / ${FIRMA.inhaber}), mich gegenüber meiner Pflegekasse in Angelegenheiten der ` +
+      'Pflegeversicherung nach dem SGB XI zu vertreten, soweit dies für die Beantragung, Abrechnung und Klärung ' +
+      'von Leistungen erforderlich ist, insbesondere für:';
+    const vollmachtLines = doc.splitTextToSize(vollmachtText, textWidth);
+    doc.text(vollmachtLines, 15, y);
+    y += vollmachtLines.length * LH + 3;
+
+    // Aufzählung Vollmacht
+    const bullets = [
+      'Verhinderungspflege nach \u00A7\u00A039 SGB XI\n(z.\u00A0B. Antrag/Anzeige, Einreichen von Nachweisen/Rechnungen, Beantwortung von Rückfragen, Einholen von Auskünften zum Bearbeitungsstand)',
+      'Entlastungsbetrag nach \u00A7\u00A045b SGB XI\n(Einreichen von Leistungsnachweisen/Rechnungen, Klärung von Rückfragen, Einholen von Auskünften zum Bearbeitungsstand)',
+      'Entgegennahme von Schreiben/Bescheiden, soweit diese die vorgenannten Abrechnungen betreffen'
+    ];
+    for (const bullet of bullets) {
+      const bLines = doc.splitTextToSize('\u2022  ' + bullet, textWidth - 5);
+      doc.text(bLines, 18, y);
+      y += bLines.length * LH + 1;
+    }
+    y += 2;
+
+    const zusatz = `Diese Vollmacht umfasst ausdrücklich auch die Zustimmung zur Direktabrechnung und Direktzahlung an den ` +
+      `Leistungserbringer (${FIRMA.name} / ${FIRMA.inhaber}), soweit dies nach den Regelungen der Pflegekasse ` +
+      'und den gesetzlichen Vorgaben zulässig ist.';
+    const zusatzLines = doc.splitTextToSize(zusatz, textWidth);
+    doc.text(zusatzLines, 15, y);
+    y += zusatzLines.length * LH + 3;
+
+    doc.text('Die Vollmacht gilt ab dem Datum meiner Unterschrift und gilt bis auf Widerruf.', 15, y);
+
+    this.addFooter(doc);
+
+    // === SEITE 2 ===
+    doc.addPage();
+    y = 20;
+
+    // B) ABTRETUNGSERKLÄRUNG
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...this.BLACK);
+    doc.text('B) ABTRETUNGSERKLÄRUNG (Direktzahlung)', 15, y);
+    y += LH + 3;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+
+    const abtretungText = `Für die Dauer der Inanspruchnahme der Leistungen trete ich hiermit meinen Anspruch auf Erstattung/Auszahlung ` +
+      'gegenüber meiner Pflegekasse aus';
+    const abtretungLines = doc.splitTextToSize(abtretungText, textWidth);
+    doc.text(abtretungLines, 15, y);
+    y += abtretungLines.length * LH + 2;
+
+    doc.text('\u2022  \u00A7\u00A039 SGB XI (Verhinderungspflege) und', 18, y); y += LH;
+    doc.text('\u2022  \u00A7\u00A045b SGB XI (Entlastungsbetrag)', 18, y);
+    y += LH + 3;
+
+    const abtretungText2 = 'widerruflich und in voller Höhe an die unter Ziffer 2 genannte Abtretungsempfängerin ab.';
+    doc.text(abtretungText2, 15, y);
+    y += LH + 3;
+
+    const bitte = 'Ich bitte die Pflegekasse, die im Rahmen der vorgenannten Leistungen bewilligten bzw. erstattungsfähigen Beträge ' +
+      'direkt auf die oben genannte Bankverbindung der Abtretungsempfängerin zu überweisen, soweit dies zulässig ist.';
+    const bitteLines = doc.splitTextToSize(bitte, textWidth);
+    doc.text(bitteLines, 15, y);
+    y += bitteLines.length * LH + 3;
+
+    doc.text('Diese Abtretung gilt ab dem Datum meiner Unterschrift und gilt bis auf Widerruf.', 15, y);
+    y += 10;
+
+    doc.line(15, y, pageWidth - 15, y);
+    y += 6;
+
+    // C) EINWILLIGUNG
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('C) EINWILLIGUNG ZUR AUSKUNFT / DATENÜBERMITTLUNG', 15, y);
+    y += LH + 3;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+
+    const einwilligung = 'Ich willige ein, dass meine Pflegekasse zur Bearbeitung der Abrechnungen die hierfür erforderlichen ' +
+      'Informationen (z.\u00A0B. Rückfragen, fehlende Unterlagen, Bearbeitungsstand sowie Bescheidinhalte, soweit die Abrechnung ' +
+      'betroffen ist) an die unter Ziffer 2 genannte Person übermitteln darf.';
+    const einwLines = doc.splitTextToSize(einwilligung, textWidth);
+    doc.text(einwLines, 15, y);
+    y += einwLines.length * LH + 20;
+
+    doc.line(15, y, pageWidth - 15, y);
+    y += 8;
+
+    // Unterschrift
+    doc.setFontSize(10);
+    doc.text(`Ort/Datum: ${abtretung.ort || 'Hattingen'}, ${App.formatDatum(abtretung.datum)}`, 15, y);
+    y += 10;
+
+    doc.text('Unterschrift Versicherte/pflegebedürftige Person:', 15, y);
+    y += 5;
+
+    // Unterschriftsbild
     if (abtretung.unterschrift) {
       try {
-        doc.addImage(abtretung.unterschrift, 'PNG', 110, y - 22, 60, 20);
+        doc.addImage(abtretung.unterschrift, 'PNG', 15, y, 60, 20);
       } catch (e) {
         console.warn('Unterschrift konnte nicht eingefügt werden:', e);
       }
     }
+    y += 22;
 
-    // Linien
-    doc.line(15, y, 80, y);
-    doc.line(110, y, pageWidth - 15, y);
+    doc.setDrawColor(...this.GRAY);
+    doc.setLineWidth(0.2);
+    doc.line(15, y, 90, y);
+    y += 5;
 
-    // Beschriftungen unter der Linie
-    doc.setFontSize(8);
-    doc.text('Ort, Datum', 15, y + 4);
-    doc.text('Unterschrift Pflegebedürftige/r', 110, y + 4);
+    doc.setFontSize(9);
+    doc.text(`Name in Druckbuchstaben: ${kunde.name || '____________'}`, 15, y);
 
     this.addFooter(doc);
     return doc;

@@ -127,43 +127,50 @@ const AbtretungModule = {
       <!-- Dokumentenvorschau -->
       <div class="doc-preview">
         <div class="doc-header">
-          <h2>Abtretungserklärung</h2>
-          <p>gemäß § 45b Abs. 1 Satz 3 SGB XI</p>
+          <h2>Vollmacht & Abtretungserklärung</h2>
+          <p>zur Vertretung gegenüber der Pflegekasse sowie zur Direktabrechnung/Direktzahlung<br>
+          (§&nbsp;39 SGB XI Verhinderungspflege und §&nbsp;45b SGB XI Entlastungsbetrag)</p>
         </div>
 
-        <p>
-          Hiermit trete ich,
-        </p>
-        <p style="margin: 8px 0; padding: 12px; background: var(--gray-50); border-radius: 8px;">
-          <strong>${KundenModule.escapeHtml(kunde.name || '')}</strong><br>
-          geb. am ${kunde.geburtstag ? App.formatDatum(kunde.geburtstag) : '____________'}<br>
-          wohnhaft: ${KundenModule.escapeHtml([kunde.strasse, kunde.plz, kunde.ort].filter(Boolean).join(', ') || '____________')}<br>
-          Versichertennummer: ${KundenModule.escapeHtml(kunde.versichertennummer || '____________')}<br>
-          Pflegekasse: ${KundenModule.escapeHtml(kunde.pflegekasse || '____________')}
-        </p>
-        <p>
-          den mir zustehenden Anspruch auf Erstattung von Aufwendungen im Rahmen des
-          Entlastungsbetrages gemäß § 45b Abs. 1 Satz 3 SGB XI in Höhe von bis zu
-          125,00 Euro monatlich an den nachfolgend genannten zugelassenen Leistungserbringer ab:
+        <p style="margin: 8px 0; padding: 10px; background: var(--gray-50); border-radius: 8px;">
+          <strong>Empfänger (Pflegekasse):</strong><br>
+          ${KundenModule.escapeHtml(kunde.pflegekasse || '____________')}
         </p>
 
-        <p style="margin: 16px 0; padding: 12px; background: var(--gray-50); border-radius: 8px;">
-          <strong>${FIRMA.name}</strong><br>
-          ${FIRMA.inhaber}<br>
-          ${FIRMA.strasse}<br>
-          ${FIRMA.plz} ${FIRMA.ort}<br>
-          IK-Nummer: ${FIRMA.ikNummer}
+        <p><strong>1) Pflegebedürftige/versicherte Person</strong></p>
+        <p style="margin: 8px 0; padding: 10px; background: var(--gray-50); border-radius: 8px;">
+          Name, Vorname: <strong>${KundenModule.escapeHtml(kunde.name || '____________')}</strong><br>
+          Anschrift: ${KundenModule.escapeHtml([kunde.strasse, kunde.plz, kunde.ort].filter(Boolean).join(', ') || '____________')}<br>
+          Versichertennummer: ${KundenModule.escapeHtml(kunde.versichertennummer || '____________')}
         </p>
 
-        <p>
-          Ich erkläre mein Einverständnis, dass der Leistungserbringer die Abrechnung der
-          von mir in Anspruch genommenen Leistungen direkt mit meiner Pflegekasse vornimmt.
+        <p><strong>2) Bevollmächtigte / Abtretungsempfängerin</strong></p>
+        <p style="margin: 8px 0; padding: 10px; background: var(--gray-50); border-radius: 8px;">
+          ${FIRMA.name} – ${FIRMA.inhaber}<br>
+          ${FIRMA.strasse}, ${FIRMA.plz} ${FIRMA.ort}<br>
+          IK-Nummer: ${FIRMA.ikNummer} · Angebots-ID: ${FIRMA.angebotsId || '080123F8M2'}
         </p>
 
-        <p>
-          Diese Abtretungserklärung gilt bis auf Widerruf.
-          Ein Widerruf ist jederzeit in Textform möglich.
-        </p>
+        <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 12px 0;">
+
+        <p><strong>A) VOLLMACHT</strong></p>
+        <p>Hiermit bevollmächtige ich, ${KundenModule.escapeHtml(kunde.name || '____________')}, die unter Ziffer 2 genannte Person, mich gegenüber meiner Pflegekasse in Angelegenheiten der Pflegeversicherung nach dem SGB XI zu vertreten, insbesondere für:</p>
+        <ul style="margin: 4px 0; padding-left: 20px; font-size: 0.9em;">
+          <li>Verhinderungspflege nach §&nbsp;39 SGB XI</li>
+          <li>Entlastungsbetrag nach §&nbsp;45b SGB XI</li>
+          <li>Entgegennahme von Schreiben/Bescheiden</li>
+        </ul>
+        <p style="font-size: 0.9em;">Diese Vollmacht umfasst ausdrücklich auch die Zustimmung zur Direktabrechnung und Direktzahlung. Sie gilt bis auf Widerruf.</p>
+
+        <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 12px 0;">
+
+        <p><strong>B) ABTRETUNGSERKLÄRUNG (Direktzahlung)</strong></p>
+        <p>Ich trete meinen Anspruch auf Erstattung/Auszahlung gegenüber meiner Pflegekasse aus §&nbsp;39 SGB XI und §&nbsp;45b SGB XI widerruflich und in voller Höhe an die Abtretungsempfängerin ab. Ich bitte die Pflegekasse, die Beträge direkt auf deren Bankverbindung zu überweisen.</p>
+
+        <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 12px 0;">
+
+        <p><strong>C) EINWILLIGUNG ZUR AUSKUNFT / DATENÜBERMITTLUNG</strong></p>
+        <p style="font-size: 0.9em;">Ich willige ein, dass meine Pflegekasse zur Bearbeitung der Abrechnungen die hierfür erforderlichen Informationen an die unter Ziffer 2 genannte Person übermitteln darf.</p>
       </div>
 
       <!-- Unterschrift -->

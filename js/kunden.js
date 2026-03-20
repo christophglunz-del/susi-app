@@ -53,7 +53,16 @@ const KundenModule = {
       return;
     }
 
-    container.innerHTML = kunden.map(kunde => `
+    // Lexoffice-Sync-Button oben in der Liste (nur wenn API vorhanden)
+    const syncButton = (typeof LexofficeAPI !== 'undefined')
+      ? `<div style="margin-bottom: 12px; text-align: right;">
+           <button class="btn btn-sm btn-outline" onclick="KundenModule.syncMitLexoffice()" title="Kunden mit Lexoffice synchronisieren">
+             🔄 Sync mit Lexoffice
+           </button>
+         </div>`
+      : '';
+
+    container.innerHTML = syncButton + kunden.map(kunde => `
       <div class="list-item" onclick="KundenModule.detailAnzeigen(${kunde.id})">
         <div class="item-avatar">${App.initialen(kunde.name)}</div>
         <div class="item-content">
@@ -276,6 +285,134 @@ const KundenModule = {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  },
+
+  // =============================================
+  // Lexoffice-Synchronisation
+  // =============================================
+
+  /**
+   * Bidirektionale Synchronisation aller Kunden mit Lexoffice
+   * - Lokale Kunden ohne lexofficeId: In Lexoffice suchen oder anlegen
+   * - Lexoffice-Kontakte mit neueren Daten: Lokal aktualisieren
+   */
+  async syncMitLexoffice() {
+    if (!LexofficeAPI.istKonfiguriert()) {
+      await LexofficeAPI.init();
+    }
+    if (!LexofficeAPI.istKonfiguriert()) {
+      App.toast('Lexoffice API-Key fehlt — bitte in Einstellungen hinterlegen', 'error');
+      return;
+    }
+
+    App.toast('Lexoffice-Sync gestartet...', 'info');
+    let angelegt = 0, verknuepft = 0, aktualisiert = 0, fehler = 0;
+
+    try {
+      // 1. Alle lokalen Kunden laden
+      const lokaleKunden = await DB.alleKunden();
+
+      // 2. Alle Lexoffice-Kontakte laden (paginiert)
+      const lexKontakte = [];
+      let page = 0;
+      let totalPages = 1;
+      while (page < totalPages) {
+        const result = await LexofficeAPI.getContacts(page, 250);
+        if (result.content) {
+          lexKontakte.push(...result.content);
+        }
+        totalPages = result.totalPages || 1;
+        page++;
+      }
+
+      // 3. Lokale Kunden ohne lexofficeId verarbeiten
+      for (const kunde of lokaleKunden) {
+        if (kunde.lexofficeId) continue; // Bereits verknüpft
+
+        try {
+          // Nach Name in Lexoffice suchen
+          const gefunden = lexKontakte.find(k => {
+            const person = k.person || {};
+            const lexName = [person.firstName, person.lastName].filter(Boolean).join(' ');
+            return lexName.toLowerCase() === kunde.name.toLowerCase();
+          });
+
+          if (gefunden) {
+            // Vorhandenen Kontakt verknüpfen
+            await DB.kundeAktualisieren(kunde.id, {
+              lexofficeId: gefunden.id,
+              lexofficeVersion: gefunden.version
+            });
+            verknuepft++;
+          } else {
+            // Neuen Kontakt in Lexoffice anlegen
+            const kontaktDaten = LexofficeAPI.kundeZuKontakt(kunde);
+            const result = await LexofficeAPI.createContact(kontaktDaten);
+            if (result.id) {
+              await DB.kundeAktualisieren(kunde.id, {
+                lexofficeId: result.id,
+                lexofficeVersion: result.version || 0
+              });
+              angelegt++;
+            }
+          }
+        } catch (err) {
+          console.error(`Sync-Fehler für Kunde "${kunde.name}":`, err);
+          fehler++;
+        }
+      }
+
+      // 4. Lexoffice-Kontakte prüfen: Gibt es neuere Daten?
+      for (const kunde of lokaleKunden) {
+        if (!kunde.lexofficeId) continue;
+
+        try {
+          const lexKontakt = await LexofficeAPI.getContact(kunde.lexofficeId);
+          if (!lexKontakt) continue;
+
+          // Aktualisierungszeitpunkt vergleichen
+          const lexUpdated = new Date(lexKontakt.updatedDate || 0);
+          const lokalUpdated = new Date(kunde.aktualisiert || 0);
+
+          if (lexUpdated > lokalUpdated) {
+            // Lexoffice-Daten sind neuer → lokal aktualisieren
+            const neueDaten = LexofficeAPI.kontaktZuKunde(lexKontakt);
+            // Nur Adress-/Kontaktdaten übernehmen, keine Pflege-spezifischen Felder
+            await DB.kundeAktualisieren(kunde.id, {
+              strasse: neueDaten.strasse || kunde.strasse,
+              plz: neueDaten.plz || kunde.plz,
+              ort: neueDaten.ort || kunde.ort,
+              telefon: neueDaten.telefon || kunde.telefon,
+              email: neueDaten.email || kunde.email,
+              lexofficeVersion: lexKontakt.version
+            });
+            aktualisiert++;
+          }
+        } catch (err) {
+          console.error(`Update-Fehler für Kunde "${kunde.name}":`, err);
+          fehler++;
+        }
+      }
+
+      // Ergebniszusammenfassung
+      const teile = [];
+      if (angelegt > 0) teile.push(`${angelegt} angelegt`);
+      if (verknuepft > 0) teile.push(`${verknuepft} verknüpft`);
+      if (aktualisiert > 0) teile.push(`${aktualisiert} aktualisiert`);
+      if (fehler > 0) teile.push(`${fehler} Fehler`);
+
+      const nachricht = teile.length > 0
+        ? `Lexoffice-Sync: ${teile.join(', ')}`
+        : 'Lexoffice-Sync: Alles aktuell';
+      App.toast(nachricht, fehler > 0 ? 'error' : 'success', 5000);
+
+      // Liste neu laden
+      await this.listeAnzeigen();
+
+    } catch (err) {
+      console.error('Lexoffice-Sync Gesamtfehler:', err);
+      App.toast('Lexoffice-Sync fehlgeschlagen: ' + err.message, 'error', 5000);
+    }
   }
 };
 
