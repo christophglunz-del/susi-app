@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#E91E7B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Susi App">
+  <meta name="description" content="Susi's Alltagshilfe - Verwaltung von Entlastungsleistungen nach § 45b SGB XI">
+  <title>Susi's Alltagshilfe</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <img src="assets/logo.jpg" alt="Logo" style="width: 36px; height: 36px; border-radius: 50%;">
+    <h1>Susi's Alltagshilfe</h1>
+    <div class="sync-status">
+      <div class="sync-dot"></div>
+      <span class="sync-label">Online</span>
+    </div>
+  </header>
+
+  <!-- Dashboard Content -->
+  <div class="page-content">
+
+    <!-- Begrüßung -->
+    <div class="card" style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white;">
+      <h2 style="font-size: 1.1rem;" id="grussFormel">Hallo Susi!</h2>
+      <p class="text-sm" style="opacity: 0.9;" id="datumHeute"></p>
+      <p class="text-sm" style="opacity: 0.8;" id="heuteInfo">Dein Tagesüberblick</p>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="route-summary">
+      <div class="summary-item">
+        <div class="summary-value" id="statKunden">-</div>
+        <div class="summary-label">Kunden</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-value" id="statHeuteTermine">-</div>
+        <div class="summary-label">Heute Termine</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-value" id="statOffeneRechnungen">-</div>
+        <div class="summary-label">Offene Rechn.</div>
+      </div>
+    </div>
+
+    <!-- Hauptnavigation (Grid) -->
+    <div class="section-title"><span class="icon">📱</span> Module</div>
+    <div class="dashboard-grid">
+      <a href="pages/kunden.html" class="dash-card">
+        <div class="dash-icon">👥</div>
+        <div class="dash-label">Kunden</div>
+        <div class="dash-count" id="dashKunden">-</div>
+      </a>
+
+      <a href="pages/leistung.html" class="dash-card">
+        <div class="dash-icon">📋</div>
+        <div class="dash-label">Leistung</div>
+        <div class="dash-count">Nachweise</div>
+      </a>
+
+      <a href="pages/fahrten.html" class="dash-card">
+        <div class="dash-icon">🚗</div>
+        <div class="dash-label">Kilometer</div>
+        <div class="dash-count">Aufzeichnung</div>
+      </a>
+
+      <a href="pages/termine.html" class="dash-card">
+        <div class="dash-icon">📅</div>
+        <div class="dash-label">Termine</div>
+        <div class="dash-count">Kalender</div>
+      </a>
+
+      <a href="pages/abtretung.html" class="dash-card">
+        <div class="dash-icon">📝</div>
+        <div class="dash-label">Abtretung</div>
+        <div class="dash-count">Erklärungen</div>
+      </a>
+
+      <a href="pages/rechnung.html" class="dash-card">
+        <div class="dash-icon">💰</div>
+        <div class="dash-label">Rechnungen</div>
+        <div class="dash-count" id="dashRechnungen">-</div>
+      </a>
+
+      <a href="pages/settings.html" class="dash-card">
+        <div class="dash-icon" style="background: var(--gray-100); color: var(--gray-600);">⚙️</div>
+        <div class="dash-label">Einstellungen</div>
+        <div class="dash-count">Backup & API</div>
+      </a>
+    </div>
+
+    <!-- Heutige Termine -->
+    <div class="section-title"><span class="icon">📅</span> Heutige Termine</div>
+    <div id="heuteTermine">
+      <div class="card text-center text-muted text-sm">Wird geladen...</div>
+    </div>
+
+    <!-- Letzte Einträge -->
+    <div class="section-title"><span class="icon">🕐</span> Letzte Einträge</div>
+    <div id="letzteEintraege">
+      <div class="card text-center text-muted text-sm">Wird geladen...</div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <a href="index.html" class="active">
+      <span class="nav-icon">🏠</span>
+      <span>Start</span>
+    </a>
+    <a href="pages/kunden.html">
+      <span class="nav-icon">👥</span>
+      <span>Kunden</span>
+    </a>
+    <a href="pages/leistung.html">
+      <span class="nav-icon">📋</span>
+      <span>Leistung</span>
+    </a>
+    <a href="pages/fahrten.html">
+      <span class="nav-icon">🚗</span>
+      <span>Fahrten</span>
+    </a>
+    <a href="pages/termine.html">
+      <span class="nav-icon">📅</span>
+      <span>Termine</span>
+    </a>
+  </nav>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    // Dashboard-Daten laden
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Datum anzeigen
+      const heute = new Date();
+      const optionen = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+      document.getElementById('datumHeute').textContent = heute.toLocaleDateString('de-DE', optionen);
+
+      // Begrüßung nach Tageszeit
+      const stunde = heute.getHours();
+      let gruss = 'Hallo Susi!';
+      if (stunde < 12) gruss = 'Guten Morgen, Susi!';
+      else if (stunde < 18) gruss = 'Guten Nachmittag, Susi!';
+      else gruss = 'Guten Abend, Susi!';
+      document.getElementById('grussFormel').textContent = gruss;
+
+      // Statistiken laden
+      try {
+        const stats = await DB.statistiken();
+        document.getElementById('statKunden').textContent = stats.kunden;
+        document.getElementById('statHeuteTermine').textContent = stats.heuteTermine;
+        document.getElementById('statOffeneRechnungen').textContent = stats.offeneRechnungen;
+        document.getElementById('dashKunden').textContent = stats.kunden + ' Kunden';
+        document.getElementById('dashRechnungen').textContent = stats.offeneRechnungen + ' offen';
+      } catch (e) {
+        console.warn('Statistiken konnten nicht geladen werden:', e);
+      }
+
+      // Heutige Termine
+      try {
+        const heuteDatum = App.heute();
+        const termine = await DB.termineFuerDatum(heuteDatum);
+        // Auch wiederkehrende Termine prüfen
+        const alleTermine = await DB.alleTermine();
+        const wochentag = heute.getDay();
+        const wiederkehrend = alleTermine.filter(t =>
+          t.wiederkehrend && t.wiederholungsMuster && t.wiederholungsMuster.wochentag === wochentag
+        );
+        const heuteTermine = [...termine, ...wiederkehrend];
+
+        const kunden = await DB.alleKunden();
+        const kundenMap = {};
+        kunden.forEach(k => kundenMap[k.id] = k);
+
+        // Geburtstage heute
+        const heuteMD = App.heute().substring(5); // MM-DD
+        kunden.forEach(k => {
+          if (k.geburtstag && k.geburtstag.substring(5) === heuteMD) {
+            const alter = heute.getFullYear() - parseInt(k.geburtstag.split('-')[0]);
+            heuteTermine.push({ titel: `🎂 ${k.name} wird ${alter}`, startzeit: '', endzeit: '', kundeId: k.id });
+          }
+        });
+
+        const termineContainer = document.getElementById('heuteTermine');
+        if (heuteTermine.length === 0) {
+          termineContainer.innerHTML = '<div class="card text-center text-muted text-sm">Keine Termine heute</div>';
+        } else {
+          termineContainer.innerHTML = heuteTermine.map(t => {
+            const kunde = kundenMap[t.kundeId];
+            return `
+              <div class="list-item">
+                <div class="item-avatar">${kunde ? App.initialen(kunde.name) : '📅'}</div>
+                <div class="item-content">
+                  <div class="item-title">${t.titel || (kunde ? kunde.name : 'Termin')}</div>
+                  <div class="item-subtitle">${App.formatZeit(t.startzeit)} - ${App.formatZeit(t.endzeit) || ''}</div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      } catch (e) {
+        console.warn('Termine konnten nicht geladen werden:', e);
+      }
+
+      // Letzte Leistungseinträge
+      try {
+        const leistungen = await DB.alleLeistungen();
+        const letzte = leistungen.slice(0, 5);
+        const kunden = await DB.alleKunden();
+        const kundenMap = {};
+        kunden.forEach(k => kundenMap[k.id] = k);
+
+        const container = document.getElementById('letzteEintraege');
+        if (letzte.length === 0) {
+          container.innerHTML = '<div class="card text-center text-muted text-sm">Noch keine Einträge</div>';
+        } else {
+          container.innerHTML = letzte.map(l => {
+            const kunde = kundenMap[l.kundeId];
+            const stunden = App.stundenBerechnen(l.startzeit, l.endzeit);
+            return `
+              <div class="list-item" onclick="window.location.href='pages/leistung.html'">
+                <div class="item-avatar">${kunde ? App.initialen(kunde.name) : '?'}</div>
+                <div class="item-content">
+                  <div class="item-title">${kunde ? kunde.name : 'Unbekannt'}</div>
+                  <div class="item-subtitle">${App.formatDatum(l.datum)} | ${stunden.toFixed(1)} Std. | ${App.formatBetrag(App.betragBerechnen(stunden))}</div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      } catch (e) {
+        console.warn('Letzte Einträge konnten nicht geladen werden:', e);
+      }
+    });
+  </script>
+</body>
+</html>
