@@ -212,6 +212,7 @@ img {
 
 .page-content {
   padding: 16px;
+  padding-bottom: 80px;
   max-width: 1024px;
   margin: 0 auto;
 }
@@ -1108,6 +1109,51 @@ textarea.form-control {
   font-weight: 600;
 }
 
+/* --- PDF-Vorschau Modal (Fullscreen) --- */
+.pdf-vorschau-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 500;
+  display: none;
+  flex-direction: column;
+}
+
+.pdf-vorschau-overlay.active {
+  display: flex;
+}
+
+.pdf-vorschau-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--primary);
+  color: white;
+  flex-shrink: 0;
+}
+
+.pdf-vorschau-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.pdf-vorschau-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  padding: 0;
+  min-height: 0;
+}
+
+.pdf-vorschau-body iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+}
+
 /* --- Dark Mode Preparation (future) --- */
 @media (prefers-color-scheme: dark) {
   /* Placeholder for future dark mode */
@@ -1224,4 +1270,54 @@ textarea.form-control {
   padding: 0 4px;
   min-width: 100px;
   font-weight: 600;
+}
+
+/* --- Google Calendar Sync Bar --- */
+.gcal-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+}
+
+.gcal-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.gcal-icon {
+  font-size: 0.7rem;
+}
+
+.gcal-label {
+  color: var(--gray-700);
+}
+
+.gcal-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.gcal-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--gray-300);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: gcal-spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+@keyframes gcal-spin {
+  to { transform: rotate(360deg); }
 }

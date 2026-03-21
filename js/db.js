@@ -51,6 +51,28 @@ db.version(3).stores({
   settings: 'key'
 });
 
+db.version(4).stores({
+  // v4: +kundentyp bei Kunden (pflege, dienstleistung, inaktiv)
+  kunden: '++id, name, versichertennummer, pflegekasse, pflegegrad, strasse, plz, ort, telefon, email, faxKasse, geburtstag, besonderheiten, lexofficeId, kundentyp, erstellt, aktualisiert',
+  leistungen: '++id, kundeId, datum, startzeit, endzeit, betreuung, alltagsbegleitung, pflegebegleitung, hauswirtschaft, notizen, unterschrift, erstellt',
+  fahrten: '++id, datum, wochentag, startAdresse, zielAdressen, strecken, gesamtKm, betrag, gpsTrack, erstellt',
+  termine: '++id, kundeId, titel, datum, startzeit, endzeit, wiederkehrend, wiederholungsMuster, farbe, notizen, erstellt',
+  abtretungen: '++id, kundeId, datum, ort, pflegekasse, unterschrift, pdfData, erstellt',
+  rechnungen: '++id, kundeId, rechnungsnummer, monat, jahr, betrag, status, versandart, versandDatum, bezahltDatum, lexofficeInvoiceId, notizen, erstellt',
+  settings: 'key'
+});
+
+db.version(5).stores({
+  // v5: +pflegegradSeit, vorleistungen, uebertragVorvorjahr bei Kunden (Entlastungsbetrag-Anpassungen)
+  kunden: '++id, name, versichertennummer, pflegekasse, pflegegrad, strasse, plz, ort, telefon, email, faxKasse, geburtstag, besonderheiten, lexofficeId, kundentyp, erstellt, aktualisiert',
+  leistungen: '++id, kundeId, datum, startzeit, endzeit, betreuung, alltagsbegleitung, pflegebegleitung, hauswirtschaft, notizen, unterschrift, erstellt',
+  fahrten: '++id, datum, wochentag, startAdresse, zielAdressen, strecken, gesamtKm, betrag, gpsTrack, erstellt',
+  termine: '++id, kundeId, titel, datum, startzeit, endzeit, wiederkehrend, wiederholungsMuster, farbe, notizen, erstellt',
+  abtretungen: '++id, kundeId, datum, ort, pflegekasse, unterschrift, pdfData, erstellt',
+  rechnungen: '++id, kundeId, rechnungsnummer, monat, jahr, betrag, status, versandart, versandDatum, bezahltDatum, lexofficeInvoiceId, notizen, erstellt',
+  settings: 'key'
+});
+
 // Standard-Firmendaten
 const FIRMA = {
   name: "Susi's Alltagshilfe",
@@ -65,6 +87,8 @@ const FIRMA = {
   ikNummer: '462524110',
   bank: 'N26',
   iban: 'DE73 1001 1001 2270 9718 12',
+  bic: 'NTSBDEB1XXX',
+  angebotsId: '080123F8M2',
   stundensatz: 32.75,
   monatsBudget: 131.00,
   kmSatz: 0.30,
@@ -103,6 +127,7 @@ const DB = {
   async kundeHinzufuegen(kunde) {
     kunde.erstellt = new Date().toISOString();
     kunde.aktualisiert = new Date().toISOString();
+    if (!kunde.kundentyp) kunde.kundentyp = 'pflege';
     return db.kunden.add(kunde);
   },
 
@@ -249,6 +274,14 @@ const DB = {
     return db.rechnungen.update(id, daten);
   },
 
+  async rechnungById(id) {
+    return db.rechnungen.get(id);
+  },
+
+  async rechnungLoeschen(id) {
+    return db.rechnungen.delete(id);
+  },
+
   // --- Settings ---
   async settingLesen(key) {
     const entry = await db.settings.get(key);
@@ -321,6 +354,16 @@ const DB = {
 // Datenbank öffnen und Testdaten anlegen wenn leer
 db.open().then(async () => {
   console.log('Datenbank erfolgreich geöffnet');
+
+  // Kundentyp-Migration: bestehende Kunden ohne kundentyp bekommen Default
+  const kunden = await db.kunden.toArray();
+  for (const k of kunden) {
+    if (!k.kundentyp) {
+      const name = (k.name || '').toLowerCase();
+      const typ = (name.includes('glunz') || name.includes('hausverwaltung')) ? 'dienstleistung' : 'pflege';
+      await db.kunden.update(k.id, { kundentyp: typ });
+    }
+  }
 
   // Testkunde anlegen wenn DB leer
   const count = await db.kunden.count();

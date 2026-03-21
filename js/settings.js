@@ -14,8 +14,8 @@ const SettingsModule = {
     // Gespeicherte Einstellungen laden
     const lexofficeKey = await DB.settingLesen('lexoffice_api_key') || '';
     const lexofficeProxy = await DB.settingLesen('lexoffice_proxy_url') || '';
-    const sipgateUser = await DB.settingLesen('sipgate_user') || '';
-    const sipgatePass = await DB.settingLesen('sipgate_pass') || '';
+    const sipgateTokenId = await DB.settingLesen('sipgate_token_id') || '';
+    const sipgateToken = await DB.settingLesen('sipgate_token') || '';
     const letterxpressUser = await DB.settingLesen('letterxpress_user') || '';
     const letterxpressKey = await DB.settingLesen('letterxpress_key') || '';
 
@@ -90,10 +90,10 @@ const SettingsModule = {
         <div class="form-group">
           <label>Sipgate (Faxversand)</label>
           <div class="form-row">
-            <input type="text" id="settSipgateUser" class="form-control"
-                   value="${sipgateUser}" placeholder="Benutzername">
-            <input type="password" id="settSipgatePass" class="form-control"
-                   value="${sipgatePass}" placeholder="Passwort">
+            <input type="text" id="settSipgateTokenId" class="form-control"
+                   value="${sipgateTokenId}" placeholder="Token-ID">
+            <input type="password" id="settSipgateToken" class="form-control"
+                   value="${sipgateToken}" placeholder="Token">
           </div>
         </div>
 
@@ -112,19 +112,8 @@ const SettingsModule = {
         </button>
       </div>
 
-      <!-- Google OAuth (Platzhalter) -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Google-Konto</span>
-          <span class="card-icon green">🔗</span>
-        </div>
-        <p class="text-sm text-muted mb-2">
-          Für Google Calendar Sync und Google Drive Backup.
-        </p>
-        <button class="btn btn-outline btn-block" disabled>
-          Google-Konto verbinden (in Planung)
-        </button>
-      </div>
+      <!-- Google Calendar -->
+      <div id="gcalSettingsPlaceholder"></div>
 
       <!-- Datensicherung -->
       <div class="card">
@@ -165,19 +154,26 @@ const SettingsModule = {
       <!-- App-Info -->
       <div class="card text-center text-sm text-muted">
         <p><strong>Susi's Alltagshilfe</strong></p>
-        <p>Version 1.0.0</p>
+        <p>Version 1.1.2</p>
         <p>PWA für Entlastungsleistungen nach § 45b SGB XI</p>
         <p class="mt-1">Made with ♥ für Susanne</p>
       </div>
     `;
+
+    // Google Calendar Einstellungen dynamisch laden
+    if (typeof GCalSync !== 'undefined') {
+      const gcalCard = await GCalSync.renderSettingsCard();
+      const placeholder = document.getElementById('gcalSettingsPlaceholder');
+      if (placeholder) placeholder.innerHTML = gcalCard;
+    }
   },
 
   async apiKeysSpeichern() {
     try {
       await DB.settingSpeichern('lexoffice_api_key', document.getElementById('settLexoffice').value);
       await DB.settingSpeichern('lexoffice_proxy_url', document.getElementById('settLexofficeProxy').value.trim());
-      await DB.settingSpeichern('sipgate_user', document.getElementById('settSipgateUser').value);
-      await DB.settingSpeichern('sipgate_pass', document.getElementById('settSipgatePass').value);
+      await DB.settingSpeichern('sipgate_token_id', document.getElementById('settSipgateTokenId').value);
+      await DB.settingSpeichern('sipgate_token', document.getElementById('settSipgateToken').value);
       await DB.settingSpeichern('letterxpress_user', document.getElementById('settLetterxpressUser').value);
       await DB.settingSpeichern('letterxpress_key', document.getElementById('settLetterxpressKey').value);
       App.toast('Einstellungen gespeichert', 'success');

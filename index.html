@@ -22,6 +22,7 @@
     <div class="sync-status">
       <div class="sync-dot"></div>
       <span class="sync-label">Online</span>
+      <span id="appVersion" style="font-size: 0.6rem; opacity: 0.6; margin-left: 6px;"></span>
     </div>
   </header>
 
@@ -33,23 +34,22 @@
       <h2 style="font-size: 1.1rem;" id="grussFormel">Hallo Susi!</h2>
       <p class="text-sm" style="opacity: 0.9;" id="datumHeute"></p>
       <p class="text-sm" style="opacity: 0.8;" id="heuteInfo">Dein Tagesüberblick</p>
-      <p class="text-sm" style="opacity: 0.5; font-size: 0.7rem; margin-top: 4px;" id="appVersion"></p>
     </div>
 
     <!-- Quick Stats -->
     <div class="route-summary">
-      <div class="summary-item">
+      <a href="pages/kunden.html" class="summary-item" style="text-decoration:none;color:inherit;">
         <div class="summary-value" id="statKunden">-</div>
         <div class="summary-label">Kunden</div>
-      </div>
-      <div class="summary-item">
+      </a>
+      <a href="pages/termine.html" class="summary-item" style="text-decoration:none;color:inherit;">
         <div class="summary-value" id="statHeuteTermine">-</div>
         <div class="summary-label">Heute Termine</div>
-      </div>
-      <div class="summary-item">
+      </a>
+      <a href="pages/rechnung.html" class="summary-item" style="text-decoration:none;color:inherit;">
         <div class="summary-value" id="statOffeneRechnungen">-</div>
         <div class="summary-label">Offene Rechn.</div>
-      </div>
+      </a>
     </div>
 
     <!-- Hauptnavigation (Grid) -->
@@ -89,6 +89,12 @@
         <div class="dash-icon">💰</div>
         <div class="dash-label">Rechnungen</div>
         <div class="dash-count" id="dashRechnungen">-</div>
+      </a>
+
+      <a href="pages/entlastung.html" class="dash-card">
+        <div class="dash-icon">⏳</div>
+        <div class="dash-label">§45b Budgetmonitor</div>
+        <div class="dash-count" id="dashEntlastung">-</div>
       </a>
 
       <a href="pages/settings.html" class="dash-card">
@@ -137,13 +143,10 @@
   </nav>
 
   <!-- Scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/app.js"></script>
-  <script>
-    // Versionsnummer anzeigen
-    window.APP_VERSION = '1.1.0';
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js?v=1.4.3"></script>
+  <script src="js/db.js?v=1.4.3"></script>
+  <script src="js/app.js?v=1.4.3"></script>
+  <script src="js/lexoffice.js?v=1.4.3"></script>
   <script>
     // Dashboard-Daten laden
     document.addEventListener('DOMContentLoaded', async () => {
@@ -159,16 +162,59 @@
       else if (stunde < 18) gruss = 'Guten Nachmittag, Susi!';
       else gruss = 'Guten Abend, Susi!';
       document.getElementById('grussFormel').textContent = gruss;
-      document.getElementById('appVersion').textContent = 'v' + (window.APP_VERSION || '?');
+      document.getElementById('appVersion').textContent = 'v' + App.version;
 
       // Statistiken laden
       try {
         const stats = await DB.statistiken();
-        document.getElementById('statKunden').textContent = stats.kunden;
+        // Nur aktive Personen zählen (keine Pflegekassen, keine inaktiven)
+        const alleKunden = await DB.alleKunden();
+        const kassenKeywords = ['aok','barmer','dak','techniker','knappschaft','bkk','novitas','energie','lbv','landesamt','krankenkasse','ersatzkasse','pflegekasse'];
+        const aktivePersonen = alleKunden.filter(k => {
+          if (k.kundentyp === 'inaktiv') return false;
+          const name = (k.name || '').toLowerCase();
+          return !kassenKeywords.some(kw => name.includes(kw));
+        });
+        document.getElementById('statKunden').textContent = aktivePersonen.length;
         document.getElementById('statHeuteTermine').textContent = stats.heuteTermine;
-        document.getElementById('statOffeneRechnungen').textContent = stats.offeneRechnungen;
-        document.getElementById('dashKunden').textContent = stats.kunden + ' Kunden';
-        document.getElementById('dashRechnungen').textContent = stats.offeneRechnungen + ' offen';
+        document.getElementById('dashKunden').textContent = aktivePersonen.length + ' Kunden';
+
+        // Offene Rechnungen aus Lexoffice laden
+        if (typeof LexofficeAPI !== 'undefined') {
+          if (!LexofficeAPI.istKonfiguriert()) await LexofficeAPI.init();
+          if (LexofficeAPI.istKonfiguriert()) {
+            try {
+              const offene = await LexofficeAPI.getOffeneRechnungen();
+              const summe = offene.reduce((s, r) => s + (r.openAmount || r.totalAmount || 0), 0);
+              document.getElementById('statOffeneRechnungen').textContent = offene.length;
+              document.getElementById('dashRechnungen').textContent = 'offen: ' + summe.toFixed(2).replace('.', ',') + ' €';
+            } catch (e) { console.warn('Lexoffice-Stats:', e); }
+          }
+        }
+
+        // Entlastungsbetrag: offenen Übertrag aus Cache laden (nur Pflegekunden)
+        try {
+          const entlCache = await DB.settingLesen('entlastung_cache');
+          if (entlCache) {
+            const entlDaten = JSON.parse(entlCache);
+            if (entlDaten.versicherte) {
+              const alleKd = await DB.alleKunden();
+              const typMap = {};
+              for (const k of alleKd) typMap[k.name.toLowerCase()] = k.kundentyp || 'pflege';
+              const kassenKw = ['reinigung','außenanlagen','pflege von','erläuterung','alltagshilfe'];
+
+              let summeOffen = 0;
+              for (const [name, v] of Object.entries(entlDaten.versicherte)) {
+                const typ = typMap[name.toLowerCase()];
+                if (typ && typ !== 'pflege') continue;
+                const lower = name.toLowerCase();
+                if (kassenKw.some(kw => lower.includes(kw))) continue;
+                summeOffen += v.verfuegbarerUebertrag || 0;
+              }
+              document.getElementById('dashEntlastung').textContent = 'offen: ' + summeOffen.toFixed(2).replace('.', ',') + ' €';
+            }
+          }
+        } catch (e) { console.warn('Entlastung-Stats:', e); }
       } catch (e) {
         console.warn('Statistiken konnten nicht geladen werden:', e);
       }

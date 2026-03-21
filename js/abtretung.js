@@ -9,17 +9,32 @@ const AbtretungModule = {
     await this.listeAnzeigen();
   },
 
+  // Keywords zur Erkennung von Pflegekassen (gleiche Liste wie KundenModule)
+  _kassenKeywords: ['aok','barmer','dak','techniker','knappschaft','bkk','novitas','energie','lbv','landesamt','krankenkasse','ersatzkasse','pflegekasse'],
+
+  _istKasse(kunde) {
+    const name = (kunde.name || '').toLowerCase();
+    return this._kassenKeywords.some(kw => name.includes(kw));
+  },
+
   async listeAnzeigen() {
     const container = document.getElementById('abtretungContent');
     if (!container) return;
 
     const abtretungen = await DB.alleAbtretungen();
-    const kunden = await DB.alleKunden();
+    const alleKunden = await DB.alleKunden();
+
+    // Pflegekassen und inaktive Kunden rausfiltern
+    const kunden = alleKunden.filter(k => !this._istKasse(k) && k.kundentyp !== 'inaktiv');
+
     const kundenMap = {};
     kunden.forEach(k => kundenMap[k.id] = k);
 
     // Kunden ohne Abtretung markieren
     const kundenMitAbtretung = new Set(abtretungen.map(a => a.kundeId));
+
+    // Kunden ohne Abtretung (gefiltert)
+    const kundenOhne = kunden.filter(k => !kundenMitAbtretung.has(k.id));
 
     container.innerHTML = `
       <div class="section-title"><span class="icon">📝</span> Bestehende Abtretungserklärungen</div>
@@ -48,16 +63,20 @@ const AbtretungModule = {
 
       <div class="section-title mt-3"><span class="icon">👥</span> Kunden ohne Abtretung</div>
 
-      ${kunden.filter(k => !kundenMitAbtretung.has(k.id)).length === 0
+      <input type="text" id="abtretungSuche" class="form-control" placeholder="Kunde suchen..."
+             oninput="AbtretungModule.kundenFiltern()" style="margin-bottom:8px;">
+
+      <div id="abtretungKundenListe">
+      ${kundenOhne.length === 0
         ? '<div class="card text-center text-muted">Alle Kunden haben eine Abtretungserklärung</div>'
-        : kunden.filter(k => !kundenMitAbtretung.has(k.id)).map(k => `
-            <div class="list-item" onclick="AbtretungModule.neueAbtretung(${k.id})">
+        : kundenOhne.map(k => `
+            <div class="list-item abtretung-kunde-item" data-name="${KundenModule.escapeHtml(k.name.toLowerCase())}" onclick="AbtretungModule.neueAbtretung(${k.id})">
               <div class="item-avatar" style="background: var(--warning-bg); color: var(--warning);">
                 ${App.initialen(k.name)}
               </div>
               <div class="item-content">
                 <div class="item-title">${KundenModule.escapeHtml(k.name)}</div>
-                <div class="item-subtitle">${k.pflegekasse || 'Keine Kasse hinterlegt'}</div>
+                <div class="item-subtitle">${k.pflegekasse ? KundenModule.escapeHtml(k.pflegekasse) : 'Keine Kasse hinterlegt'}</div>
               </div>
               <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); AbtretungModule.neueAbtretung(${k.id})">
                 Erstellen
@@ -65,7 +84,19 @@ const AbtretungModule = {
             </div>
           `).join('')
       }
+      </div>
     `;
+  },
+
+  kundenFiltern() {
+    const suchfeld = document.getElementById('abtretungSuche');
+    if (!suchfeld) return;
+    const begriff = suchfeld.value.toLowerCase().trim();
+    const items = document.querySelectorAll('.abtretung-kunde-item');
+    items.forEach(item => {
+      const name = item.getAttribute('data-name') || '';
+      item.style.display = name.includes(begriff) ? '' : 'none';
+    });
   },
 
   async neueAbtretung(kundeId) {
@@ -74,6 +105,46 @@ const AbtretungModule = {
       App.toast('Kunde nicht gefunden', 'error');
       return;
     }
+
+    // Pflegekasse + Versichertennummer aus Lexoffice nachtragen falls leer
+    if (kunde.lexofficeId && (!kunde.pflegekasse || !kunde.versichertennummer)) {
+      try {
+        if (typeof LexofficeAPI !== 'undefined') {
+          if (!LexofficeAPI.istKonfiguriert()) await LexofficeAPI.init();
+          if (LexofficeAPI.istKonfiguriert()) {
+            const kontakt = await LexofficeAPI.getContact(kunde.lexofficeId);
+            const billing = (kontakt.addresses && kontakt.addresses.billing && kontakt.addresses.billing[0]) || {};
+            const supplement = billing.supplement || '';
+            const updates = {};
+
+            if (!kunde.pflegekasse && supplement) {
+              // Kassenname aus Supplement extrahieren (vor "Vers" oder vor der Nummer)
+              const kassenMatch = supplement.match(/^(.+?)(?:\s*,?\s*(?:Vers|[A-Z]\s*\d{6}))/i);
+              if (kassenMatch) updates.pflegekasse = kassenMatch[1].trim();
+            }
+
+            if (!kunde.versichertennummer && supplement) {
+              const versNrMatch = supplement.match(/[A-Z]\s*\d{6,}/);
+              if (versNrMatch) updates.versichertennummer = versNrMatch[0].replace(/\s/g, '');
+            }
+
+            // Faxnummer der Kasse aus Kontakt-Telefonnummern
+            if (!kunde.faxKasse && kontakt.phoneNumbers && kontakt.phoneNumbers.fax) {
+              updates.faxKasse = kontakt.phoneNumbers.fax[0];
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await DB.kundeAktualisieren(kunde.id, updates);
+              Object.assign(kunde, updates);
+              console.log('Abtretung: Kundendaten aus Lexoffice nachgetragen:', updates);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Lexoffice-Abgleich fehlgeschlagen:', e);
+      }
+    }
+
     this.formAnzeigen(null, kunde);
   },
 
@@ -81,7 +152,69 @@ const AbtretungModule = {
     const abtretung = await db.abtretungen.get(id);
     if (!abtretung) return;
     const kunde = await DB.kundeById(abtretung.kundeId);
-    this.formAnzeigen(abtretung, kunde);
+
+    const container = document.getElementById('abtretungContent');
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;">Abtretungserklärung</h3>
+          <button class="btn btn-sm btn-outline" onclick="AbtretungModule.listeAnzeigen()">← Zurück</button>
+        </div>
+
+        <table style="width:100%;font-size:0.9rem;border-collapse:collapse;">
+          <tr><td style="padding:6px 8px;color:var(--gray-600);width:40%;">Kunde</td><td style="padding:6px 8px;font-weight:600;">${kunde ? KundenModule.escapeHtml(kunde.name) : 'Unbekannt'}</td></tr>
+          <tr><td style="padding:6px 8px;color:var(--gray-600);">Versichertennummer</td><td style="padding:6px 8px;">${kunde && kunde.versichertennummer ? KundenModule.escapeHtml(kunde.versichertennummer) : '-'}</td></tr>
+          <tr><td style="padding:6px 8px;color:var(--gray-600);">Pflegekasse</td><td style="padding:6px 8px;">${KundenModule.escapeHtml(abtretung.pflegekasse || (kunde && kunde.pflegekasse ? kunde.pflegekasse : '') || '-')}</td></tr>
+          <tr><td style="padding:6px 8px;color:var(--gray-600);">Ort</td><td style="padding:6px 8px;">${KundenModule.escapeHtml(abtretung.ort || '-')}</td></tr>
+          <tr><td style="padding:6px 8px;color:var(--gray-600);">Datum</td><td style="padding:6px 8px;">${abtretung.datum ? new Date(abtretung.datum).toLocaleDateString('de-DE') : '-'}</td></tr>
+        </table>
+
+        ${abtretung.unterschrift ? `
+          <div style="margin-top:16px;padding:12px;background:var(--gray-50);border-radius:8px;">
+            <div class="text-sm text-muted" style="margin-bottom:4px;">Unterschrift</div>
+            <img src="${abtretung.unterschrift}" style="max-width:100%;height:auto;border:1px solid var(--gray-200);border-radius:4px;" alt="Unterschrift">
+          </div>
+        ` : '<div class="text-sm text-muted" style="margin-top:12px;">Keine Unterschrift vorhanden</div>'}
+
+        <div class="btn-group mt-2">
+          <button class="btn btn-outline" onclick="AbtretungModule.alsPdfHerunterladen(${id})">
+            📄 Als PDF
+          </button>
+          <button class="btn btn-outline" onclick="AbtretungModule.neueAbtretung(${kunde ? kunde.id : 0})">
+            + Neue Abtretung
+          </button>
+        </div>
+      </div>
+    `;
+  },
+
+  async alsPdfHerunterladen(id) {
+    const abtretung = await db.abtretungen.get(id);
+    if (!abtretung) return;
+    const kunde = await DB.kundeById(abtretung.kundeId);
+    try {
+      if (abtretung.pdfData) {
+        // PDF aus gespeicherten Daten
+        const blob = new Blob([Uint8Array.from(atob(abtretung.pdfData), c => c.charCodeAt(0))], {type: 'application/pdf'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Abtretung_${kunde ? kunde.name.replace(/\s+/g, '_') : 'Kunde'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      } else if (typeof PDFHelper !== 'undefined' && PDFHelper.generateAbtretung) {
+        const doc = await PDFHelper.generateAbtretung(abtretung, kunde);
+        PDFHelper.download(doc, `Abtretung_${kunde ? kunde.name.replace(/\s+/g, '_') : 'Kunde'}.pdf`);
+      } else {
+        App.toast('PDF-Erstellung nicht verfügbar', 'error');
+        return;
+      }
+      App.toast('PDF erstellt', 'success');
+    } catch (e) {
+      App.toast('PDF-Fehler: ' + e.message, 'error');
+    }
   },
 
   formAnzeigen(abtretung = null, kunde = {}) {
@@ -91,7 +224,7 @@ const AbtretungModule = {
     container.innerHTML = `
       <div class="card">
         <h3 class="card-title mb-2">
-          ${abtretung ? 'Abtretungserklärung' : 'Neue Abtretungserklärung'}
+          Neue Abtretungserklärung
         </h3>
 
         <div class="form-row">
@@ -114,12 +247,12 @@ const AbtretungModule = {
           <div class="form-group">
             <label for="abtretungOrt">Ort</label>
             <input type="text" id="abtretungOrt" class="form-control"
-                   value="${abtretung ? KundenModule.escapeHtml(abtretung.ort || 'Hattingen') : 'Hattingen'}">
+                   value="Hattingen">
           </div>
           <div class="form-group">
             <label for="abtretungDatum">Datum</label>
             <input type="date" id="abtretungDatum" class="form-control"
-                   value="${abtretung ? abtretung.datum : App.heute()}">
+                   value="${App.heute()}">
           </div>
         </div>
       </div>
@@ -184,29 +317,21 @@ const AbtretungModule = {
       </div>
 
       <div class="btn-group mt-2">
-        <button class="btn btn-primary btn-block" onclick="AbtretungModule.speichern(${abtretung ? abtretung.id : 'null'}, ${kunde.id})">
-          ${abtretung ? 'Aktualisieren' : 'Speichern'}
+        <button class="btn btn-primary btn-block" onclick="AbtretungModule.speichern(null, ${kunde.id})">
+          Speichern
         </button>
-        <button class="btn btn-outline" onclick="AbtretungModule.pdfErstellen(${abtretung ? abtretung.id : 'null'}, ${kunde.id})">
+        <button class="btn btn-outline" onclick="AbtretungModule.pdfErstellen(null, ${kunde.id})">
           📄 PDF erstellen
         </button>
         <button class="btn btn-secondary" onclick="AbtretungModule.listeAnzeigen()">
           Abbrechen
         </button>
-        ${abtretung ? `
-          <button class="btn btn-danger btn-sm" onclick="AbtretungModule.loeschen(${abtretung.id})">
-            Löschen
-          </button>
-        ` : ''}
       </div>
     `;
 
     // Signatur initialisieren
     setTimeout(() => {
       this.signaturePad = initSignaturePad('abtretungSignatur', 'abtretungSigActions');
-      if (abtretung && abtretung.unterschrift) {
-        this.signaturePad.fromDataURL(abtretung.unterschrift);
-      }
     }, 100);
   },
 

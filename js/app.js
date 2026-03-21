@@ -6,12 +6,33 @@
 const App = {
   isOnline: navigator.onLine,
 
+  version: '1.4.3',
+
   // App initialisieren
   init() {
     this.registerServiceWorker();
     this.setupOnlineStatus();
     this.updateSyncStatus();
-    console.log("Susi's Alltagshilfe gestartet");
+    this.showVersion();
+    console.log("Susi's Alltagshilfe v" + this.version + " gestartet");
+  },
+
+  // Versionsnummer im Header anzeigen
+  showVersion() {
+    const el = document.getElementById('appVersion');
+    if (el) {
+      el.textContent = 'v' + this.version;
+    } else {
+      // Automatisch ans sync-status div anhängen
+      const syncDiv = document.querySelector('.sync-status');
+      if (syncDiv) {
+        const span = document.createElement('span');
+        span.id = 'appVersion';
+        span.style.cssText = 'font-size: 0.6rem; opacity: 0.6; margin-left: 6px;';
+        span.textContent = 'v' + this.version;
+        syncDiv.appendChild(span);
+      }
+    }
   },
 
   // Service Worker registrieren
@@ -203,6 +224,120 @@ const App = {
   // Betrag berechnen
   betragBerechnen(stunden) {
     return Math.round(stunden * FIRMA.stundensatz * 100) / 100;
+  },
+
+  // Sync-Zeitstempel relativ formatieren
+  formatSyncZeit(datum) {
+    if (!datum) return '';
+    const d = datum instanceof Date ? datum : new Date(datum);
+    if (isNaN(d.getTime())) return '';
+
+    const jetzt = new Date();
+    const heute = new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate());
+    const tag = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffTage = Math.floor((heute - tag) / (1000 * 60 * 60 * 24));
+    const zeit = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+    if (diffTage === 0) return 'heute ' + zeit;
+    if (diffTage === 1) return 'gestern ' + zeit;
+    if (diffTage === 2) return 'vorgestern';
+
+    if (diffTage >= 3 && diffTage <= 7) {
+      // Gleiche Kalenderwoche?
+      const kwJetzt = this._kalenderwoche(jetzt);
+      const kwDatum = this._kalenderwoche(d);
+      if (kwJetzt[0] === kwDatum[0] && kwJetzt[1] === kwDatum[1]) {
+        return 'diese Woche';
+      }
+      const tage = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+      return tage[d.getDay()];
+    }
+
+    if (diffTage > 7 && diffTage <= 14) return 'letzte Woche';
+
+    if (d.getFullYear() === jetzt.getFullYear() && d.getMonth() === jetzt.getMonth()) {
+      return 'diesen Monat';
+    }
+
+    // Vormonat
+    const vormonat = new Date(jetzt.getFullYear(), jetzt.getMonth() - 1, 1);
+    if (d.getFullYear() === vormonat.getFullYear() && d.getMonth() === vormonat.getMonth()) {
+      return 'letzten Monat';
+    }
+
+    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  },
+
+  // Kalenderwoche berechnen (ISO 8601) — gibt [jahr, kw] zurück
+  _kalenderwoche(datum) {
+    const d = new Date(Date.UTC(datum.getFullYear(), datum.getMonth(), datum.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const jahresAnfang = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const kw = Math.ceil((((d - jahresAnfang) / 86400000) + 1) / 7);
+    return [d.getUTCFullYear(), kw];
+  },
+
+  // Mini-Taschenrechner für Betragsfelder
+  miniRechner(zielFeldId) {
+    const alt = document.getElementById('miniRechnerOverlay');
+    if (alt) alt.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'miniRechnerOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:600;display:flex;align-items:center;justify-content:center;';
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+    overlay.innerHTML = `
+      <div style="background:white;border-radius:12px;padding:20px;width:280px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <strong>Rechner</strong>
+          <button onclick="document.getElementById('miniRechnerOverlay').remove()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;">\u2715</button>
+        </div>
+        <input type="text" id="rechnerFormel" class="form-control" placeholder="z.B. 8 * 131"
+               oninput="App._rechnerBerechnen()" style="font-size:1.1rem;margin-bottom:8px;">
+        <div id="rechnerErgebnis" style="font-size:1.3rem;font-weight:700;text-align:right;padding:8px;background:var(--gray-100);border-radius:8px;margin-bottom:12px;">
+          0,00 \u20ac
+        </div>
+        <button class="btn btn-primary btn-block" onclick="App._rechnerUebernehmen('${zielFeldId}')">
+          \u00dcbernehmen
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    document.getElementById('rechnerFormel').focus();
+  },
+
+  _rechnerBerechnen() {
+    const formel = document.getElementById('rechnerFormel').value.trim();
+    const ergebnisEl = document.getElementById('rechnerErgebnis');
+    if (!formel) { ergebnisEl.textContent = '0,00 \u20ac'; return; }
+    try {
+      const bereinigt = formel.replace(/,/g, '.').replace(/[^0-9.+\-*/() ]/g, '');
+      const result = new Function('return ' + bereinigt)();
+      if (typeof result === 'number' && isFinite(result)) {
+        ergebnisEl.textContent = result.toFixed(2).replace('.', ',') + ' \u20ac';
+      } else {
+        ergebnisEl.textContent = '?';
+      }
+    } catch (e) {
+      ergebnisEl.textContent = '...';
+    }
+  },
+
+  _rechnerUebernehmen(zielFeldId) {
+    const formel = document.getElementById('rechnerFormel').value.trim();
+    if (!formel) return;
+    try {
+      const bereinigt = formel.replace(/,/g, '.').replace(/[^0-9.+\-*/() ]/g, '');
+      const result = new Function('return ' + bereinigt)();
+      if (typeof result === 'number' && isFinite(result)) {
+        document.getElementById(zielFeldId).value = result.toFixed(2);
+        document.getElementById('miniRechnerOverlay').remove();
+      }
+    } catch (e) {
+      // ignorieren
+    }
   }
 };
 

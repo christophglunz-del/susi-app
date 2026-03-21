@@ -893,7 +893,7 @@ const PDFHelper = {
    */
   async loadLogo() {
     try {
-      const resp = await fetch('./assets/logo.jpg');
+      const resp = await fetch('/assets/logo.jpg');
       if (!resp.ok) return;
       const blob = await resp.blob();
       const reader = new FileReader();

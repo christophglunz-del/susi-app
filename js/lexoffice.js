@@ -252,6 +252,38 @@ const LexofficeAPI = {
     return this.requestBlob(`files/${documentFileId}`);
   },
 
+  /**
+   * Offene/überfällige Rechnungen aus Lexoffice laden (paginiert)
+   */
+  async getOffeneRechnungen() {
+    const alle = [];
+    let page = 0, totalPages = 1;
+    while (page < totalPages) {
+      const result = await this.request(`voucherlist?page=${page}&size=250&voucherType=invoice&voucherStatus=open`);
+      if (result.content) alle.push(...result.content);
+      totalPages = result.totalPages || 1;
+      page++;
+    }
+    return alle;
+  },
+
+  /**
+   * Alle Rechnungen aus Lexoffice laden (open + paidoff, getrennte API-Calls)
+   */
+  async getAlleRechnungen() {
+    const alle = [];
+    for (const status of ['open', 'paid']) {
+      let page = 0, totalPages = 1;
+      while (page < totalPages) {
+        const result = await this.request(`voucherlist?page=${page}&size=250&voucherType=invoice&voucherStatus=${status}`);
+        if (result.content) alle.push(...result.content);
+        totalPages = result.totalPages || 1;
+        page++;
+      }
+    }
+    return alle;
+  },
+
   // =============================================
   // Hilfsfunktionen: Datenformat-Konvertierung
   // =============================================

@@ -4,6 +4,15 @@
 
 const KundenModule = {
   currentKunde: null,
+  _kundenFilter: 'alle',
+
+  // Kassen-Keywords zur Erkennung von Pflegekassen/Firmen
+  _kassenKeywords: ['aok','barmer','dak','techniker','knappschaft','bkk','novitas','energie','lbv','landesamt','krankenkasse','ersatzkasse','pflegekasse'],
+
+  istKasse(kunde) {
+    const name = (kunde.name || '').toLowerCase();
+    return this._kassenKeywords.some(kw => name.includes(kw));
+  },
 
   async init() {
     await this.listeAnzeigen();
@@ -53,20 +62,73 @@ const KundenModule = {
       return;
     }
 
+    // Filterleiste
+    const filterLeiste = `
+      <div class="btn-group" style="gap:4px;margin-bottom:8px;">
+        <button class="btn btn-sm ${this._kundenFilter === 'alle' ? 'btn-primary' : 'btn-outline'} kunden-filter-btn" data-filter="alle" onclick="KundenModule.filterKunden('alle')">Alle</button>
+        <button class="btn btn-sm ${this._kundenFilter === 'personen' ? 'btn-primary' : 'btn-outline'} kunden-filter-btn" data-filter="personen" onclick="KundenModule.filterKunden('personen')">Personen</button>
+        <button class="btn btn-sm ${this._kundenFilter === 'kassen' ? 'btn-primary' : 'btn-outline'} kunden-filter-btn" data-filter="kassen" onclick="KundenModule.filterKunden('kassen')">Pflegekassen</button>
+      </div>
+    `;
+
     // Lexoffice-Sync-Button oben in der Liste (nur wenn API vorhanden)
     const syncButton = (typeof LexofficeAPI !== 'undefined')
-      ? `<div style="margin-bottom: 12px; text-align: right;">
+      ? `<div style="margin-bottom: 12px; display:flex; justify-content:flex-end; align-items:center; gap:8px;">
+           <span id="kundenSyncZeit" class="text-xs text-muted"></span>
            <button class="btn btn-sm btn-outline" onclick="KundenModule.syncMitLexoffice()" title="Kunden mit Lexoffice synchronisieren">
-             🔄 Sync mit Lexoffice
+             🔄 Sync
            </button>
          </div>`
       : '';
 
-    container.innerHTML = syncButton + kunden.map(kunde => `
-      <div class="list-item" onclick="KundenModule.detailAnzeigen(${kunde.id})">
+    // Gespeicherten Sync-Zeitstempel laden
+    const gespeicherteSyncZeit = await DB.settingLesen('sync_zeit_kunden');
+
+    // Inaktive Kunden ans Ende sortieren
+    kunden.sort((a, b) => {
+      const aInaktiv = a.kundentyp === 'inaktiv' ? 1 : 0;
+      const bInaktiv = b.kundentyp === 'inaktiv' ? 1 : 0;
+      if (aInaktiv !== bInaktiv) return aInaktiv - bInaktiv;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    // Filter anwenden
+    if (this._kundenFilter === 'personen') {
+      kunden = kunden.filter(k => !this.istKasse(k));
+    } else if (this._kundenFilter === 'kassen') {
+      kunden = kunden.filter(k => this.istKasse(k));
+    }
+
+    if (kunden.length === 0) {
+      container.innerHTML = filterLeiste + syncButton + `
+        <div class="empty-state">
+          <div class="empty-icon">👥</div>
+          <p>Keine Kunden in dieser Kategorie</p>
+        </div>
+      `;
+      // Sync-Zeitstempel trotzdem anzeigen
+      if (gespeicherteSyncZeit) {
+        const syncZeitEl = document.getElementById('kundenSyncZeit');
+        if (syncZeitEl) syncZeitEl.textContent = App.formatSyncZeit(gespeicherteSyncZeit);
+      }
+      return;
+    }
+
+    container.innerHTML = filterLeiste + syncButton + kunden.map(kunde => {
+      const istInaktiv = kunde.kundentyp === 'inaktiv';
+      const istDL = kunde.kundentyp === 'dienstleistung';
+      const badge = istInaktiv
+        ? '<span style="display:inline-block;font-size:0.65rem;padding:1px 6px;border-radius:8px;background:var(--gray-200);color:var(--gray-500);margin-left:6px;vertical-align:middle;">inaktiv</span>'
+        : istDL
+          ? '<span style="display:inline-block;font-size:0.65rem;padding:1px 6px;border-radius:8px;background:#e0f2fe;color:#0369a1;margin-left:6px;vertical-align:middle;">DL</span>'
+          : '';
+      const itemStyle = istInaktiv ? 'opacity:0.5;' : '';
+
+      return `
+      <div class="list-item" onclick="KundenModule.detailAnzeigen(${kunde.id})" style="${itemStyle}">
         <div class="item-avatar">${App.initialen(kunde.name)}</div>
         <div class="item-content">
-          <div class="item-title">${this.escapeHtml(kunde.name)}</div>
+          <div class="item-title">${this.escapeHtml(kunde.name)}${badge}</div>
           <div class="item-subtitle">
             ${kunde.pflegekasse || ''} ${kunde.pflegegrad ? '| PG ' + kunde.pflegegrad : ''}
             ${kunde.besonderheiten ? '| ' + this.escapeHtml(kunde.besonderheiten) : ''}
@@ -74,7 +136,20 @@ const KundenModule = {
         </div>
         <div class="item-action">›</div>
       </div>
-    `).join('');
+    `;
+    }).join('');
+
+    // Gespeicherten Sync-Zeitstempel anzeigen
+    if (gespeicherteSyncZeit) {
+      const syncZeitEl = document.getElementById('kundenSyncZeit');
+      if (syncZeitEl) syncZeitEl.textContent = App.formatSyncZeit(gespeicherteSyncZeit);
+    }
+  },
+
+  filterKunden(filter) {
+    this._kundenFilter = filter;
+    const suchbegriff = document.getElementById('kundenSuche')?.value || '';
+    this.listeAnzeigen(suchbegriff);
   },
 
   neuerKunde() {
@@ -181,20 +256,36 @@ const KundenModule = {
                    placeholder="Faxnummer">
           </div>
 
-          <div class="form-group">
-            <label for="kundePflegegrad">Pflegegrad</label>
-            <select id="kundePflegegrad" class="form-control">
-              <option value="">-- Bitte wählen --</option>
-              ${[1,2,3,4,5].map(pg =>
-                `<option value="${pg}" ${kunde && kunde.pflegegrad == pg ? 'selected' : ''}>Pflegegrad ${pg}</option>`
-              ).join('')}
-            </select>
+          <div class="form-row">
+            <div class="form-group" style="flex:1;">
+              <label for="kundePflegegrad">Pflegegrad</label>
+              <select id="kundePflegegrad" class="form-control">
+                <option value="">-- Bitte wählen --</option>
+                ${[1,2,3,4,5].map(pg =>
+                  `<option value="${pg}" ${kunde && kunde.pflegegrad == pg ? 'selected' : ''}>Pflegegrad ${pg}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label for="kundePflegegradSeit">seit</label>
+              <input type="date" id="kundePflegegradSeit" class="form-control"
+                     value="${kunde ? (kunde.pflegegradSeit || '') : ''}">
+            </div>
           </div>
 
           <div class="form-group">
             <label for="kundeBesonderheiten">Besonderheiten</label>
             <textarea id="kundeBesonderheiten" class="form-control" rows="3"
                       placeholder="z.B. 50% LBV, besondere Hinweise...">${kunde ? this.escapeHtml(kunde.besonderheiten || '') : ''}</textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="kundeKundentyp">Kundentyp</label>
+            <select id="kundeKundentyp" class="form-control">
+              <option value="pflege" ${!kunde || !kunde.kundentyp || kunde.kundentyp === 'pflege' ? 'selected' : ''}>Pflegekunde (Entlastungsbetrag)</option>
+              <option value="dienstleistung" ${kunde && kunde.kundentyp === 'dienstleistung' ? 'selected' : ''}>Dienstleistung (ohne Pflege)</option>
+              <option value="inaktiv" ${kunde && kunde.kundentyp === 'inaktiv' ? 'selected' : ''}>Inaktiv</option>
+            </select>
           </div>
         </div>
 
@@ -227,8 +318,10 @@ const KundenModule = {
       pflegekasse: document.getElementById('kundePflegekasse').value,
       faxKasse: document.getElementById('kundeFaxKasse').value.trim(),
       pflegegrad: document.getElementById('kundePflegegrad').value,
+      pflegegradSeit: document.getElementById('kundePflegegradSeit').value || null,
       geburtstag: document.getElementById('kundeGeburtstag').value || null,
-      besonderheiten: document.getElementById('kundeBesonderheiten').value.trim()
+      besonderheiten: document.getElementById('kundeBesonderheiten').value.trim(),
+      kundentyp: document.getElementById('kundeKundentyp').value || 'pflege'
     };
 
     if (!daten.name) {
@@ -362,8 +455,36 @@ const KundenModule = {
         }
       }
 
-      // 4. Lexoffice-Kontakte prüfen: Gibt es neuere Daten?
-      for (const kunde of lokaleKunden) {
+      // 4. Lexoffice-Kontakte importieren, die lokal noch nicht existieren
+      const verknuepfteIds = new Set(
+        (await DB.alleKunden()).filter(k => k.lexofficeId).map(k => k.lexofficeId)
+      );
+      for (const lexKontakt of lexKontakte) {
+        if (verknuepfteIds.has(lexKontakt.id)) continue;
+        // Nur Kunden-Kontakte importieren (keine Lieferanten etc.)
+        if (!lexKontakt.roles || !lexKontakt.roles.customer) continue;
+
+        try {
+          const neueDaten = LexofficeAPI.kontaktZuKunde(lexKontakt);
+          // Firmen-Kontakte: Name aus company.name
+          if (!neueDaten.name && lexKontakt.company) {
+            neueDaten.name = lexKontakt.company.name;
+          }
+          if (!neueDaten.name) continue;
+
+          neueDaten.lexofficeId = lexKontakt.id;
+          neueDaten.lexofficeVersion = lexKontakt.version;
+          await DB.kundeHinzufuegen(neueDaten);
+          angelegt++;
+        } catch (err) {
+          console.error(`Import-Fehler für Lexoffice-Kontakt "${lexKontakt.id}":`, err);
+          fehler++;
+        }
+      }
+
+      // 5. Lexoffice-Kontakte prüfen: Gibt es neuere Daten?
+      const aktuelleKunden = await DB.alleKunden();
+      for (const kunde of aktuelleKunden) {
         if (!kunde.lexofficeId) continue;
 
         try {
@@ -405,6 +526,12 @@ const KundenModule = {
         ? `Lexoffice-Sync: ${teile.join(', ')}`
         : 'Lexoffice-Sync: Alles aktuell';
       App.toast(nachricht, fehler > 0 ? 'error' : 'success', 5000);
+
+      // Sync-Zeitstempel speichern und anzeigen
+      const syncZeitIso = new Date().toISOString();
+      await DB.settingSpeichern('sync_zeit_kunden', syncZeitIso);
+      const zeitEl = document.getElementById('kundenSyncZeit');
+      if (zeitEl) zeitEl.textContent = App.formatSyncZeit(syncZeitIso);
 
       // Liste neu laden
       await this.listeAnzeigen();

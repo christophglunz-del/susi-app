@@ -1,5 +1,5 @@
 // Service Worker für Susi's Alltagshilfe PWA
-const CACHE_NAME = 'susi-app-v3';
+const CACHE_NAME = 'susi-app-v9';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS_TO_CACHE = [
   './pages/termine.html',
   './pages/abtretung.html',
   './pages/rechnung.html',
+  './pages/entlastung.html',
   './pages/settings.html',
   './css/style.css',
   './js/app.js',
@@ -23,6 +24,10 @@ const ASSETS_TO_CACHE = [
   './js/signature.js',
   './js/pdf.js',
   './js/lexoffice.js',
+  './js/entlastung.js',
+  './js/sipgate.js',
+  './js/letterxpress.js',
+  './js/gcal.js',
   './manifest.json'
 ];
 
@@ -77,38 +82,29 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch: Cache-First-Strategie mit Network-Fallback
+// Fetch: Network-First-Strategie mit Cache-Fallback
 self.addEventListener('fetch', event => {
   // Nur GET-Requests cachen
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      if (cachedResponse) {
-        // Im Hintergrund aktualisieren (stale-while-revalidate)
-        event.waitUntil(
-          fetch(event.request).then(networkResponse => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then(cache => {
-                cache.put(event.request, networkResponse);
-              });
-            }
-          }).catch(() => {/* Offline - ignorieren */})
-        );
-        return cachedResponse;
-      }
+  // API-Requests (Proxy / Lexoffice) NICHT cachen — direkt ans Netzwerk
+  const url = new URL(event.request.url);
+  if (url.port === '8484' || url.hostname === 'api.lexoffice.io' || url.hostname === 'api.sipgate.com') return;
 
-      // Nicht im Cache: Netzwerk versuchen
-      return fetch(event.request).then(networkResponse => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return networkResponse;
-      }).catch(() => {
-        // Offline und nicht im Cache
+  event.respondWith(
+    fetch(event.request).then(networkResponse => {
+      // Netzwerk erfolgreich → Cache aktualisieren
+      if (networkResponse && networkResponse.status === 200) {
+        const responseClone = networkResponse.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, responseClone);
+        });
+      }
+      return networkResponse;
+    }).catch(() => {
+      // Offline → aus Cache liefern
+      return caches.match(event.request).then(cachedResponse => {
+        if (cachedResponse) return cachedResponse;
         if (event.request.destination === 'document') {
           return caches.match('./index.html');
         }

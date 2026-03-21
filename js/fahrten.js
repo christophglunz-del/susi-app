@@ -98,14 +98,30 @@ const FahrtenModule = {
         ${tage.map(t => this.tagRendern(t)).join('')}
       </div>
 
-      <!-- PDF-Buttons -->
-      <div class="btn-group mt-2">
-        <button class="btn btn-outline btn-block" onclick="FahrtenModule.wochenPdfErstellen()">
-          📄 Wochen-PDF
-        </button>
-        <button class="btn btn-outline btn-block" onclick="FahrtenModule.monatsPdfErstellen(${aktMonat}, ${aktJahr})">
-          📊 Monatsauswertung ${App.monatsName(aktMonat)}
-        </button>
+      <!-- Auswertungen -->
+      <div class="card mt-2">
+        <h3 class="card-title mb-2">Auswertungen</h3>
+
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">
+          <select id="auswertungKW" class="form-control" style="flex:1;">
+            ${this.kwOptionsRendern()}
+          </select>
+          <button class="btn btn-outline" onclick="FahrtenModule.wochenVorschau()" style="white-space:nowrap;">
+            📄 Woche
+          </button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <select id="auswertungMonat" class="form-control" style="flex:1;">
+            ${this.monatsOptionsRendern(aktMonat)}
+          </select>
+          <select id="auswertungJahr" class="form-control" style="flex:0;min-width:100px;">
+            ${this.jahresOptionsRendern(aktJahr)}
+          </select>
+          <button class="btn btn-outline" onclick="FahrtenModule.monatsVorschau()" style="white-space:nowrap;">
+            📊 Monat
+          </button>
+        </div>
       </div>
     `;
 
@@ -746,13 +762,213 @@ const FahrtenModule = {
     this.wocheAnzeigen();
   },
 
+  // ===== AUSWERTUNGS-DROPDOWNS =====
+
+  kwOptionsRendern() {
+    const aktuelleKW = this.getKW();
+    let html = '';
+    for (let kw = 1; kw <= 52; kw++) {
+      html += `<option value="${kw}" ${kw === aktuelleKW ? 'selected' : ''}>KW ${kw}</option>`;
+    }
+    return html;
+  },
+
+  monatsOptionsRendern(aktuellerMonat) {
+    const namen = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    return namen.map((name, i) =>
+      `<option value="${i + 1}" ${(i + 1) === aktuellerMonat ? 'selected' : ''}>${name}</option>`
+    ).join('');
+  },
+
+  jahresOptionsRendern(aktuellesJahr) {
+    let html = '';
+    for (let j = 2024; j <= aktuellesJahr; j++) {
+      html += `<option value="${j}" ${j === aktuellesJahr ? 'selected' : ''}>${j}</option>`;
+    }
+    return html;
+  },
+
+  montagFuerKW(kw, jahr) {
+    // ISO 8601: KW 1 enthält den 4. Januar
+    const jan4 = new Date(jahr, 0, 4);
+    const montag1 = new Date(jan4);
+    montag1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+    const result = new Date(montag1);
+    result.setDate(montag1.getDate() + (kw - 1) * 7);
+    return result;
+  },
+
+  // ===== VORSCHAU =====
+
+  async wochenVorschau() {
+    const kw = parseInt(document.getElementById('auswertungKW').value);
+    const jahr = new Date().getFullYear();
+    const montag = this.montagFuerKW(kw, jahr);
+    const montagStr = montag.toISOString().split('T')[0];
+
+    const fahrten = await DB.fahrtenFuerWoche(montagStr);
+    fahrten.sort((a, b) => a.datum.localeCompare(b.datum));
+
+    let gesamtKm = 0;
+    let gesamtBetrag = 0;
+
+    const tageKurz = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+
+    let zeilen = '';
+    fahrten.forEach(f => {
+      const km = f.gesamtKm || 0;
+      const betrag = km * FIRMA.kmSatz;
+      gesamtKm += km;
+      gesamtBetrag += betrag;
+
+      const d = new Date(f.datum + 'T00:00:00');
+      const tagStr = tageKurz[d.getDay()] + ' ' + d.getDate().toString().padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.';
+      const ziele = (f.zielAdressen || []).join(', ') || f.notiz || '–';
+
+      zeilen += `
+        <tr>
+          <td style="padding:6px;">${tagStr}</td>
+          <td style="padding:6px;">${ziele}</td>
+          <td style="text-align:right;padding:6px;">${km.toFixed(1).replace('.',',')}</td>
+          <td style="text-align:right;padding:6px;">${App.formatBetrag(betrag)}</td>
+        </tr>`;
+    });
+
+    if (fahrten.length === 0) {
+      zeilen = '<tr><td colspan="4" style="padding:6px;text-align:center;color:var(--gray-500);">Keine Fahrten in dieser Woche</td></tr>';
+    }
+
+    const content = document.getElementById('fahrtenVorschauContent');
+    content.innerHTML = `
+      <div class="card" style="background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h3>Wochenauswertung KW ${kw} / ${jahr}</h3>
+          <button class="btn btn-sm" onclick="FahrtenModule.vorschauSchliessen()" style="font-size:1.2rem;padding:4px 8px;">✕</button>
+        </div>
+
+        <table style="width:100%;font-size:0.85rem;border-collapse:collapse;margin-top:12px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--gray-300);">
+              <th style="text-align:left;padding:6px;">Tag</th>
+              <th style="text-align:left;padding:6px;">Ziele</th>
+              <th style="text-align:right;padding:6px;">km</th>
+              <th style="text-align:right;padding:6px;">Betrag</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${zeilen}
+          </tbody>
+          <tfoot>
+            <tr style="border-top:2px solid var(--gray-300);font-weight:700;">
+              <td colspan="2" style="padding:6px;">Gesamt</td>
+              <td style="text-align:right;padding:6px;">${gesamtKm.toFixed(1).replace('.',',')} km</td>
+              <td style="text-align:right;padding:6px;">${App.formatBetrag(gesamtBetrag)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <button class="btn btn-primary btn-block mt-2" onclick="FahrtenModule.wochenPdfErstellen()">
+          📄 Als PDF herunterladen
+        </button>
+      </div>
+    `;
+
+    document.getElementById('fahrtenVorschauOverlay').classList.remove('hidden');
+  },
+
+  async monatsVorschau() {
+    const monat = parseInt(document.getElementById('auswertungMonat').value);
+    const jahr = parseInt(document.getElementById('auswertungJahr').value);
+    const monatStr = `${jahr}-${String(monat).padStart(2, '0')}`;
+
+    const alleFahrten = await DB.alleFahrten();
+    const fahrten = alleFahrten.filter(f => f.datum && f.datum.startsWith(monatStr));
+    fahrten.sort((a, b) => a.datum.localeCompare(b.datum));
+
+    let gesamtKm = 0;
+    let gesamtBetrag = 0;
+
+    const tageKurz = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+
+    let zeilen = '';
+    fahrten.forEach(f => {
+      const km = f.gesamtKm || 0;
+      const betrag = km * FIRMA.kmSatz;
+      gesamtKm += km;
+      gesamtBetrag += betrag;
+
+      const d = new Date(f.datum + 'T00:00:00');
+      const tagStr = tageKurz[d.getDay()] + ' ' + d.getDate().toString().padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.';
+      const ziele = (f.zielAdressen || []).join(', ') || f.notiz || '–';
+
+      zeilen += `
+        <tr>
+          <td style="padding:6px;">${tagStr}</td>
+          <td style="padding:6px;">${ziele}</td>
+          <td style="text-align:right;padding:6px;">${km.toFixed(1).replace('.',',')}</td>
+          <td style="text-align:right;padding:6px;">${App.formatBetrag(betrag)}</td>
+        </tr>`;
+    });
+
+    if (fahrten.length === 0) {
+      zeilen = '<tr><td colspan="4" style="padding:6px;text-align:center;color:var(--gray-500);">Keine Fahrten in diesem Monat</td></tr>';
+    }
+
+    const monatsNamen = ['','Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    const content = document.getElementById('fahrtenVorschauContent');
+    content.innerHTML = `
+      <div class="card" style="background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h3>Monatsauswertung ${monatsNamen[monat]} ${jahr}</h3>
+          <button class="btn btn-sm" onclick="FahrtenModule.vorschauSchliessen()" style="font-size:1.2rem;padding:4px 8px;">✕</button>
+        </div>
+
+        <table style="width:100%;font-size:0.85rem;border-collapse:collapse;margin-top:12px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--gray-300);">
+              <th style="text-align:left;padding:6px;">Tag</th>
+              <th style="text-align:left;padding:6px;">Ziele</th>
+              <th style="text-align:right;padding:6px;">km</th>
+              <th style="text-align:right;padding:6px;">Betrag</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${zeilen}
+          </tbody>
+          <tfoot>
+            <tr style="border-top:2px solid var(--gray-300);font-weight:700;">
+              <td colspan="2" style="padding:6px;">Gesamt</td>
+              <td style="text-align:right;padding:6px;">${gesamtKm.toFixed(1).replace('.',',')} km</td>
+              <td style="text-align:right;padding:6px;">${App.formatBetrag(gesamtBetrag)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <button class="btn btn-primary btn-block mt-2" onclick="FahrtenModule.monatsPdfErstellen()">
+          📊 Als PDF herunterladen
+        </button>
+      </div>
+    `;
+
+    document.getElementById('fahrtenVorschauOverlay').classList.remove('hidden');
+  },
+
+  vorschauSchliessen() {
+    document.getElementById('fahrtenVorschauOverlay').classList.add('hidden');
+  },
+
   // ===== PDFs =====
 
   async wochenPdfErstellen() {
     try {
-      const fahrten = await DB.fahrtenFuerWoche(this.currentWeekStart.toISOString().split('T')[0]);
-      const doc = await PDFHelper.generateKilometerWoche(fahrten, this.currentWeekStart.toISOString().split('T')[0]);
-      const dateiname = `Kilometer_KW${this.getKW()}_${this.currentWeekStart.getFullYear()}.pdf`;
+      const kw = parseInt(document.getElementById('auswertungKW')?.value || this.getKW());
+      const jahr = new Date().getFullYear();
+      const montag = this.montagFuerKW(kw, jahr);
+      const montagStr = montag.toISOString().split('T')[0];
+
+      const fahrten = await DB.fahrtenFuerWoche(montagStr);
+      const doc = await PDFHelper.generateKilometerWoche(fahrten, montagStr);
+      const dateiname = `Kilometer_KW${kw}_${jahr}.pdf`;
       PDFHelper.download(doc, dateiname);
       App.toast('Wochen-PDF erstellt', 'success');
     } catch (err) {
@@ -761,8 +977,11 @@ const FahrtenModule = {
     }
   },
 
-  async monatsPdfErstellen(monat, jahr) {
+  async monatsPdfErstellen() {
     try {
+      const monat = parseInt(document.getElementById('auswertungMonat')?.value || (new Date().getMonth() + 1));
+      const jahr = parseInt(document.getElementById('auswertungJahr')?.value || new Date().getFullYear());
+
       const alleFahrten = await DB.alleFahrten();
       const monatStr = `${jahr}-${String(monat).padStart(2, '0')}`;
       const fahrten = alleFahrten.filter(f => f.datum && f.datum.startsWith(monatStr));

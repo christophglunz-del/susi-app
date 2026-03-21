@@ -162,9 +162,7 @@ const TermineModule = {
           }).join('')
       }
 
-      <div class="mt-3 text-center text-sm text-muted">
-        Google Calendar Sync: <em>in Planung</em>
-      </div>
+      ${typeof GCalSync !== 'undefined' ? GCalSync.renderSyncBar() : ''}
     `;
   },
 
