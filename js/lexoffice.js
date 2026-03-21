@@ -317,63 +317,232 @@ const LexofficeAPI = {
   },
 
   /**
-   * Lokale Rechnung + Leistungen in Lexoffice-Rechnungs-Format umwandeln
-   * Erstellt eine Rechnung an die Pflegekasse (nicht an den Kunden direkt)
+   * Variante der Rechnung ermitteln basierend auf Kundendaten
+   * @param {Object} kunde - Kundendatensatz
+   * @returns {string} 'kasse' | 'privat' | 'lbv'
    */
-  rechnungZuLexoffice(rechnung, kunde, leistungen) {
-    // Leistungspositionen aufbauen
-    const positionen = leistungen.map(l => {
-      const stunden = App.stundenBerechnen(l.startzeit, l.endzeit);
-      const leistungsArten = [];
-      if (l.betreuung) leistungsArten.push('Betreuung');
-      if (l.alltagsbegleitung) leistungsArten.push('Alltagsbegleitung');
-      if (l.pflegebegleitung) leistungsArten.push('Pflegebegleitung');
-      if (l.hauswirtschaft) leistungsArten.push('Hauswirtschaft');
-      if (l.freitext) leistungsArten.push(l.freitext);
+  varianteErmitteln(kunde) {
+    const besonderheiten = (kunde.besonderheiten || '').toLowerCase();
+    if (besonderheiten.includes('lbv')) return 'lbv';
+    if (!kunde.pflegekasse || kunde.pflegekasse === 'Sonstige') return 'privat';
+    return 'kasse';
+  },
 
-      return {
-        type: 'custom',
-        name: `Entlastungsleistung ${App.formatDatum(l.datum)} (${leistungsArten.join(', ')})`,
-        description: `${App.formatZeit(l.startzeit)} - ${App.formatZeit(l.endzeit)} Uhr, ${kunde.name}, VersNr: ${kunde.versichertennummer || '-'}`,
-        quantity: stunden,
-        unitName: 'Stunde',
-        unitPrice: {
-          currency: 'EUR',
-          netAmount: FIRMA.stundensatz,
-          taxRatePercentage: 0
-        }
-      };
+  /**
+   * Leistungszeitraum (erstes und letztes Datum) aus Leistungen ermitteln
+   * @param {Array} leistungen - Array von Leistungsdatensätzen
+   * @returns {{ start: string, end: string }} ISO-Datumsstrings
+   */
+  _leistungszeitraum(leistungen) {
+    const daten = leistungen.map(l => l.datum).sort();
+    return {
+      start: daten[0],
+      end: daten[daten.length - 1]
+    };
+  },
+
+  /**
+   * Fälligkeitsdatum berechnen (30 Tage ab heute)
+   * @returns {string} Formatiertes Datum (DD.MM.YYYY)
+   */
+  _faelligkeitsDatum() {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  },
+
+  /**
+   * Lokale Rechnung + Leistungen in Lexoffice-Rechnungs-Format umwandeln
+   *
+   * Unterstützt drei Varianten:
+   *   - 'kasse':  Kassenrechnung (Direktabrechnung an Pflegekasse)
+   *   - 'privat': Privatrechnung (Selbstzahler, an Person)
+   *   - 'lbv':    LBV-Splitting (Rechnung an Person, separates Anschreiben an Kasse)
+   *
+   * @param {Object} rechnung - Lokaler Rechnungsdatensatz
+   * @param {Object} kunde - Kundendatensatz
+   * @param {Array} leistungen - Leistungen des Monats für diesen Kunden
+   * @param {string} [variante] - 'kasse', 'privat' oder 'lbv' (auto-detect wenn nicht angegeben)
+   * @returns {Object} Rechnung im Lexoffice-API-Format
+   */
+  rechnungZuLexoffice(rechnung, kunde, leistungen, variante) {
+    // Variante automatisch ermitteln falls nicht übergeben
+    if (!variante) {
+      variante = this.varianteErmitteln(kunde);
+    }
+
+    const zeitraum = this._leistungszeitraum(leistungen);
+    const faelligkeitsDatum = this._faelligkeitsDatum();
+
+    // Gesamtstunden für lineItem-Zusammenfassung
+    let gesamtStunden = 0;
+    leistungen.forEach(l => {
+      gesamtStunden += App.stundenBerechnen(l.startzeit, l.endzeit);
     });
 
-    // Lexoffice-Rechnungsformat
+    // --- Adresse je nach Variante ---
+    let address;
+    if (variante === 'kasse') {
+      // Kassenrechnung: Empfänger ist die Pflegekasse
+      address = {
+        name: kunde.pflegekasse || 'Pflegekasse',
+        supplement: 'Pflegekasse'
+      };
+      if (kunde.pflegekasseAdresse) {
+        address.supplement += `\n${kunde.pflegekasseAdresse}`;
+      }
+    } else {
+      // Privat + LBV: Empfänger ist die Person direkt
+      address = {
+        name: kunde.name,
+        street: kunde.strasse || '',
+        zip: kunde.plz || '',
+        city: kunde.ort || '',
+        countryCode: 'DE'
+      };
+    }
+
+    // Wenn Kunde eine Lexoffice-ID hat, als Kontakt-Referenz verwenden
+    if (kunde.lexofficeId) {
+      address.contactId = kunde.lexofficeId;
+    }
+
+    // --- Leistungsposition (eine zusammengefasste Zeile) ---
+    let positionName, positionDescription;
+    if (variante === 'kasse') {
+      positionName = kunde.name;
+      positionDescription = 'Betreuung im Alltag nach § 45b SGB XI';
+    } else {
+      // privat + lbv
+      positionName = 'Alltagshilfe';
+      positionDescription = 'Betreuung im Alltag';
+    }
+
+    const lineItems = [{
+      type: 'custom',
+      name: positionName,
+      description: positionDescription,
+      quantity: gesamtStunden,
+      unitName: 'Stunde(n)',
+      unitPrice: {
+        currency: 'EUR',
+        netAmount: FIRMA.stundensatz,
+        taxRatePercentage: 0
+      }
+    }];
+
+    // --- Remark je nach Variante ---
+    let remark;
+    if (variante === 'kasse') {
+      remark = 'Die Abrechnung erfolgt im Rahmen der Direktabrechnung gemäß der vorliegenden ' +
+        'Abtretungserklärung. Die Leistungen wurden nach § 45b SGB XI (Entlastungsbetrag) als ' +
+        'anerkanntes Angebot zur Unterstützung im Alltag gemäß § 45a SGB XI erbracht. ' +
+        'Die Abtretung der Ansprüche erfolgte nach § 13 SGB V i.\u202fV.\u202fm. § 190 BGB. ' +
+        'Ich bitte um Überweisung auf die in der Rechnung genannte Bankverbindung.';
+    } else {
+      // privat + lbv
+      remark = 'Vielen Dank für die gute Zusammenarbeit.';
+    }
+
+    // --- paymentTermLabel je nach Variante ---
+    let paymentTermLabel;
+    if (variante === 'kasse') {
+      paymentTermLabel = `Ich bitte um umgehende Zahlung, spätestens jedoch bis zum ${faelligkeitsDatum} (§ 36 Abs. 2 SGB XI).`;
+    } else {
+      paymentTermLabel = `Ich bitte um umgehende Zahlung, spätestens jedoch bis zum ${faelligkeitsDatum}.`;
+    }
+
+    // --- Lexoffice-Rechnungsformat zusammenbauen ---
     const lexRechnung = {
       voucherDate: new Date().toISOString(),
-      address: {
-        // Empfänger ist die Pflegekasse (Freitext-Adresse)
-        name: kunde.pflegekasse || 'Pflegekasse',
-        supplement: `z.Hd. Leistungsabrechnung\nVers.: ${kunde.name}\nVersNr.: ${kunde.versichertennummer || '-'}`
-      },
-      lineItems: positionen,
+      address,
+      lineItems,
       totalPrice: {
         currency: 'EUR'
       },
       taxConditions: {
         taxType: 'vatfree',
-        taxTypeNote: 'Kleinunternehmer gemäß § 19 Abs. 1 UStG — keine Umsatzsteuer ausgewiesen.'
+        taxTypeNote: 'Umsatzsteuer wird nicht berechnet (§ 19 Abs. 1 UStG)'
       },
       title: 'Rechnung',
-      introduction: `Abrechnung Entlastungsleistungen nach § 45b SGB XI\nLeistungszeitraum: ${App.monatsName(rechnung.monat)} ${rechnung.jahr}\nIK-Nummer: ${FIRMA.ikNummer}`,
-      remark: `Bitte überweisen Sie den Betrag auf:\n${FIRMA.bank} | IBAN: ${FIRMA.iban}\nKontoinhaberin: ${FIRMA.inhaber}\n\nVielen Dank!`,
+      introduction: 'Meine Leistungen stelle ich Ihnen wie folgt in Rechnung.',
+      remark,
       shippingConditions: {
-        shippingType: 'none'
+        shippingType: 'service',
+        shippingDate: zeitraum.start + 'T00:00:00.000+01:00',
+        shippingEndDate: zeitraum.end + 'T00:00:00.000+01:00'
+      },
+      paymentConditions: {
+        paymentTermLabel,
+        paymentTermDuration: 30
       }
     };
 
-    // Wenn Kunde eine Lexoffice-ID hat, diese als Kontakt-Referenz verwenden
-    if (kunde.lexofficeId) {
-      lexRechnung.address.contactId = kunde.lexofficeId;
-    }
-
     return lexRechnung;
+  },
+
+  /**
+   * LBV-Anschreiben an die Pflegekasse generieren (Kletzing-Sonderfall)
+   *
+   * Wird als separates Dokument erstellt — NICHT Teil der Lexoffice-Rechnung.
+   * Die Lexoffice-Rechnung geht an die Person (wie Privatrechnung),
+   * das Anschreiben geht an die Kasse mit dem Hinweis auf 50% LBV-Übernahme.
+   *
+   * @param {Object} rechnung - Lokaler Rechnungsdatensatz (mit rechnungsnummer, monat, jahr, betrag)
+   * @param {Object} kunde - Kundendatensatz (mit name, versichertennummer, pflegekasse, etc.)
+   * @returns {string} Textinhalt des LBV-Anschreibens
+   */
+  generateLBVAnschreiben(rechnung, kunde) {
+    const zeitraum = `${App.monatsName(rechnung.monat)} ${rechnung.jahr}`;
+    const halberBetrag = (rechnung.betrag / 2).toFixed(2).replace('.', ',');
+    const gesamtBetrag = rechnung.betrag.toFixed(2).replace('.', ',');
+    const rechnungsnummer = rechnung.rechnungsnummer || '(wird nach Finalisierung vergeben)';
+
+    const text = [
+      `${FIRMA.inhaber}`,
+      `${FIRMA.name}`,
+      `${FIRMA.strasse}`,
+      `${FIRMA.plz} ${FIRMA.ort}`,
+      `Tel.: ${FIRMA.telefon}`,
+      `E-Mail: ${FIRMA.email}`,
+      `IK-Nummer: ${FIRMA.ikNummer}`,
+      '',
+      `${kunde.pflegekasse || 'Pflegekasse'}`,
+      `${kunde.pflegekasseAdresse || ''}`,
+      '',
+      `Datum: ${new Date().toLocaleDateString('de-DE')}`,
+      '',
+      `Betreff: Einreichung der Rechnung ${rechnungsnummer} zur Direktabrechnung gemäß § 45b SGB XI – ${kunde.name}, Vers.-Nr. ${kunde.versichertennummer || '-'}`,
+      '',
+      'Sehr geehrte Damen und Herren,',
+      '',
+      `anbei übersende ich Ihnen die Rechnung Nr. ${rechnungsnummer} über Leistungen ` +
+        `der Betreuung im Alltag für den Leistungszeitraum ${zeitraum} ` +
+        `in Höhe von ${gesamtBetrag} Euro zur Direktabrechnung.`,
+      '',
+      `Für ${kunde.name} (Vers.-Nr. ${kunde.versichertennummer || '-'}) liegt eine ` +
+        'unterzeichnete Abtretungserklärung vor, auf deren Grundlage ich die Abrechnung ' +
+        'direkt mit Ihnen vornehme.',
+      '',
+      'Die Abrechnung erfolgt im Rahmen der Direktabrechnung gemäß der vorliegenden ' +
+        'Abtretungserklärung. Die Leistungen wurden nach § 45b SGB XI (Entlastungsbetrag) als ' +
+        'anerkanntes Angebot zur Unterstützung im Alltag gemäß § 45a SGB XI erbracht. ' +
+        'Die Abtretung der Ansprüche erfolgte nach § 13 SGB V i.\u202fV.\u202fm. § 190 BGB.',
+      '',
+      `Die Hälfte der Aufwendungen wird von der Landesbeamtenversorgung (LBV) übernommen. ` +
+        `Ich bitte daher um Erstattung in Höhe von 50 % des Rechnungsbetrags, ` +
+        `entsprechend ${halberBetrag} Euro.`,
+      '',
+      'Ich bitte um Überweisung auf folgende Bankverbindung:',
+      `${FIRMA.bank} | IBAN: ${FIRMA.iban}`,
+      `Kontoinhaberin: ${FIRMA.inhaber}`,
+      '',
+      'Mit freundlichen Grüßen',
+      '',
+      FIRMA.inhaber,
+      FIRMA.name
+    ].join('\n');
+
+    return text;
   }
 };
