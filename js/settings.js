@@ -83,8 +83,8 @@ const SettingsModule = {
         <div class="form-group">
           <label for="settLexofficeProxy">Lexoffice Proxy-URL (optional)</label>
           <input type="url" id="settLexofficeProxy" class="form-control"
-                 value="${lexofficeProxy}" placeholder="z.B. https://mein-proxy.example.com/lexoffice">
-          <div class="form-hint">Nötig wegen CORS — leer lassen für direkten Zugriff (z.B. mit Browser-Extension)</div>
+                 value="${lexofficeProxy}" placeholder="https://susi-proxy.cg-d2f.workers.dev">
+          <div class="form-hint">CORS-Proxy (Cloudflare Worker) — leer lassen für direkten Zugriff</div>
         </div>
 
         <div class="form-group">

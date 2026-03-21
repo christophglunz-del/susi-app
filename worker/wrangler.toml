@@ -1,0 +1,12 @@
+name = "susi-proxy"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# API-Ziele (nicht geheim)
+LEXOFFICE_BASE = "https://api.lexware.io/v1"
+SIPGATE_BASE = "https://api.sipgate.com/v2"
+LETTERXPRESS_BASE = "http://api.letterxpress.de/v3"
+
+# Erlaubte Origins (komma-getrennt)
+ALLOWED_ORIGINS = "https://christophglunz-del.github.io"
