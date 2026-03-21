@@ -284,13 +284,6 @@ const EntlastungModule = {
 
     listeEl.innerHTML = namen.map(name => {
       const v = daten.versicherte[name];
-      const uebertragText = v.vorjahrRest > 0
-        ? this._betrag(v.verfuegbarerUebertrag)
-        : '0,00 \u20ac';
-      const verfallText = v.vorjahrRest > 0
-        ? `<div class="text-xs" style="color:var(--danger);margin-top:4px;">verf\u00e4llt 30.06.${daten.aktuellesJahr}</div>`
-        : '';
-
       return `
         <div class="card" onclick="EntlastungModule.detailAnzeigen('${this._escapeHtml(name)}')" style="cursor:pointer;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -299,11 +292,9 @@ const EntlastungModule = {
               <div class="text-sm text-muted">${this._escapeHtml(v.kasse || 'Pflegekasse')}</div>
             </div>
             <div style="text-align:right;">
-              <div style="font-weight:700;">${uebertragText}</div>
-              <div class="text-xs text-muted">\u00dcbertrag ${daten.vorjahr}</div>
+              <div class="text-xs" style="color:var(--danger);">Verfall 30.06.?</div>
             </div>
           </div>
-          ${verfallText}
         </div>
       `;
     }).join('');
