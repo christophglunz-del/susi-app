@@ -245,7 +245,7 @@ const EntlastungModule = {
     const listeEl = document.getElementById('entlastungListe');
     if (!listeEl || !daten || !daten.versicherte) return;
 
-    // Nur Versicherte anzeigen, deren lokaler Kunde kundentyp 'pflege' hat (oder kein kundentyp = Default pflege)
+    // Inaktive und Dienstleistungs-Kunden ausblenden (nur 'pflege' anzeigen)
     const lokaleKunden = await DB.alleKunden();
     const kundenTypMap = {};
     for (const k of lokaleKunden) {
@@ -255,9 +255,9 @@ const EntlastungModule = {
     const namen = Object.keys(daten.versicherte)
       .filter(name => {
         const typ = kundenTypMap[name.toLowerCase()];
-        // Nur anzeigen wenn kundentyp 'pflege' (oder Default pflege bei unbekannten echten Personen)
+        // Bekannte Nicht-Pflege-Kunden (inaktiv, dienstleistung) rausfiltern
         if (typ && typ !== 'pflege') return false;
-        // Keine Personen-Namen rausfiltern (Dienstleistungs-Positionen)
+        // Sachbegriffe rausfiltern (keine echten Personen)
         const lower = name.toLowerCase();
         if (lower.includes('reinigung') || lower.includes('außenanlagen') || lower.includes('pflege von') || lower.startsWith('erläuterung')) return false;
         // Filter anwenden
@@ -363,6 +363,13 @@ const EntlastungModule = {
     }
 
     const lokaleKunden = await DB.alleKunden();
+
+    // Kundentyp-Map: nur 'pflege' (oder Default) soll in die Berechnung
+    const kundenTypMap = {};
+    for (const k of lokaleKunden) {
+      kundenTypMap[k.name.toLowerCase()] = k.kundentyp || 'pflege';
+    }
+
     const ergebnis = {
       aktuellesJahr,
       vorjahr,
@@ -370,6 +377,10 @@ const EntlastungModule = {
     };
 
     for (const [name, daten] of Object.entries(versicherteDaten)) {
+      // Inaktive und Dienstleistungs-Kunden komplett aus Berechnung ausschliessen
+      const typ = kundenTypMap[name.toLowerCase()];
+      if (typ && typ !== 'pflege') continue;
+
       const kunde = lokaleKunden.find(k => k.name.toLowerCase() === name.toLowerCase());
 
       let startMonat = 0;
