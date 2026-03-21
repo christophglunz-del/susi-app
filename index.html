@@ -33,6 +33,7 @@
       <h2 style="font-size: 1.1rem;" id="grussFormel">Hallo Susi!</h2>
       <p class="text-sm" style="opacity: 0.9;" id="datumHeute"></p>
       <p class="text-sm" style="opacity: 0.8;" id="heuteInfo">Dein Tagesüberblick</p>
+      <p class="text-sm" style="opacity: 0.5; font-size: 0.7rem; margin-top: 4px;" id="appVersion"></p>
     </div>
 
     <!-- Quick Stats -->
@@ -140,6 +141,10 @@
   <script src="js/db.js"></script>
   <script src="js/app.js"></script>
   <script>
+    // Versionsnummer anzeigen
+    window.APP_VERSION = '1.1.0';
+  </script>
+  <script>
     // Dashboard-Daten laden
     document.addEventListener('DOMContentLoaded', async () => {
       // Datum anzeigen
@@ -154,6 +159,7 @@
       else if (stunde < 18) gruss = 'Guten Nachmittag, Susi!';
       else gruss = 'Guten Abend, Susi!';
       document.getElementById('grussFormel').textContent = gruss;
+      document.getElementById('appVersion').textContent = 'v' + (window.APP_VERSION || '?');
 
       // Statistiken laden
       try {
