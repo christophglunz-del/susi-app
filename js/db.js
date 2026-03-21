@@ -40,6 +40,17 @@ db.version(2).stores({
   settings: 'key'
 });
 
+db.version(3).stores({
+  // v3: +lexofficeId bei Kunden und Rechnungen für Lexoffice-Integration
+  kunden: '++id, name, versichertennummer, pflegekasse, pflegegrad, strasse, plz, ort, telefon, email, faxKasse, geburtstag, besonderheiten, lexofficeId, erstellt, aktualisiert',
+  leistungen: '++id, kundeId, datum, startzeit, endzeit, betreuung, alltagsbegleitung, pflegebegleitung, hauswirtschaft, notizen, unterschrift, erstellt',
+  fahrten: '++id, datum, wochentag, startAdresse, zielAdressen, strecken, gesamtKm, betrag, gpsTrack, erstellt',
+  termine: '++id, kundeId, titel, datum, startzeit, endzeit, wiederkehrend, wiederholungsMuster, farbe, notizen, erstellt',
+  abtretungen: '++id, kundeId, datum, ort, pflegekasse, unterschrift, pdfData, erstellt',
+  rechnungen: '++id, kundeId, rechnungsnummer, monat, jahr, betrag, status, versandart, versandDatum, bezahltDatum, lexofficeInvoiceId, notizen, erstellt',
+  settings: 'key'
+});
+
 // Standard-Firmendaten
 const FIRMA = {
   name: "Susi's Alltagshilfe",
@@ -306,17 +317,6 @@ const DB = {
     };
   }
 };
-
-db.version(3).stores({
-  // v3: +lexofficeId bei Kunden und Rechnungen für Lexoffice-Integration
-  kunden: '++id, name, versichertennummer, pflegekasse, pflegegrad, strasse, plz, ort, telefon, email, faxKasse, geburtstag, besonderheiten, lexofficeId, erstellt, aktualisiert',
-  leistungen: '++id, kundeId, datum, startzeit, endzeit, betreuung, alltagsbegleitung, pflegebegleitung, hauswirtschaft, notizen, unterschrift, erstellt',
-  fahrten: '++id, datum, wochentag, startAdresse, zielAdressen, strecken, gesamtKm, betrag, gpsTrack, erstellt',
-  termine: '++id, kundeId, titel, datum, startzeit, endzeit, wiederkehrend, wiederholungsMuster, farbe, notizen, erstellt',
-  abtretungen: '++id, kundeId, datum, ort, pflegekasse, unterschrift, pdfData, erstellt',
-  rechnungen: '++id, kundeId, rechnungsnummer, monat, jahr, betrag, status, versandart, versandDatum, bezahltDatum, lexofficeInvoiceId, notizen, erstellt',
-  settings: 'key'
-});
 
 // Datenbank öffnen und Testdaten anlegen wenn leer
 db.open().then(async () => {
