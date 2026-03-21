@@ -255,8 +255,8 @@ const EntlastungModule = {
     const namen = Object.keys(daten.versicherte)
       .filter(name => {
         const typ = kundenTypMap[name.toLowerCase()];
-        // Bekannte Nicht-Pflege-Kunden (inaktiv, dienstleistung) rausfiltern
-        if (typ && typ !== 'pflege') return false;
+        // Nur explizit als 'pflege' bekannte Kunden anzeigen
+        if (typ !== 'pflege') return false;
         // Sachbegriffe rausfiltern (keine echten Personen)
         const lower = name.toLowerCase();
         if (lower.includes('reinigung') || lower.includes('außenanlagen') || lower.includes('pflege von') || lower.startsWith('erläuterung')) return false;
@@ -377,9 +377,9 @@ const EntlastungModule = {
     };
 
     for (const [name, daten] of Object.entries(versicherteDaten)) {
-      // Inaktive und Dienstleistungs-Kunden komplett aus Berechnung ausschliessen
+      // Nur explizit als 'pflege' bekannte Kunden in die Berechnung aufnehmen
       const typ = kundenTypMap[name.toLowerCase()];
-      if (typ && typ !== 'pflege') continue;
+      if (typ !== 'pflege') continue;
 
       const kunde = lokaleKunden.find(k => k.name.toLowerCase() === name.toLowerCase());
 
