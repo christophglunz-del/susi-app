@@ -1,5 +1,5 @@
 // Service Worker für Susi's Alltagshilfe PWA
-const CACHE_NAME = 'susi-app-v9';
+const CACHE_NAME = 'susi-app-v10';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
