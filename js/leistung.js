@@ -7,6 +7,16 @@ const LeistungModule = {
   signaturePad: null,
 
   async init() {
+    const params = new URLSearchParams(window.location.search);
+    const kundeId = params.get('kunde');
+    if (kundeId) {
+      window.history.replaceState({}, '', window.location.pathname);
+      const kunden = await DB.alleKunden();
+      if (kunden.length > 0) {
+        this.formAnzeigen(null, kunden, parseInt(kundeId));
+        return;
+      }
+    }
     await this.listeAnzeigen();
   },
 
@@ -144,12 +154,13 @@ const LeistungModule = {
     this.formAnzeigen(leistung, kunden);
   },
 
-  formAnzeigen(leistung = null, kunden = []) {
+  formAnzeigen(leistung = null, kunden = [], vorauswahlKundeId = null) {
     const container = document.getElementById('leistungContent');
     if (!container) return;
 
+    const selectedId = leistung ? leistung.kundeId : vorauswahlKundeId;
     const kundenOptions = kunden.map(k =>
-      `<option value="${k.id}" ${leistung && leistung.kundeId === k.id ? 'selected' : ''}>${this.escapeHtml(k.name)}</option>`
+      `<option value="${k.id}" ${selectedId === k.id ? 'selected' : ''}>${this.escapeHtml(k.name)}</option>`
     ).join('');
 
     container.innerHTML = `

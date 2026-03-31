@@ -171,6 +171,9 @@ const KundenModule = {
     const container = document.getElementById('kundenContent');
     if (!container) return;
 
+    const fab = document.getElementById('kundenFab');
+    if (fab) fab.style.display = 'none';
+
     const kassenOptions = PFLEGEKASSEN.map(k =>
       `<option value="${k.name}" ${kunde && kunde.pflegekasse === k.name ? 'selected' : ''}>${k.name}</option>`
     ).join('');
@@ -303,6 +306,9 @@ const KundenModule = {
           ` : ''}
         </div>
       </form>
+      ${kunde ? `
+        <button class="btn-fab" onclick="window.location.href='leistung.html?kunde=${kunde.id}'" title="Neue Leistung für ${this.escapeHtml(kunde.name)}">+</button>
+      ` : ''}
     `;
   },
 
@@ -359,6 +365,8 @@ const KundenModule = {
 
   zurueckZurListe() {
     this.currentKunde = null;
+    const fab = document.getElementById('kundenFab');
+    if (fab) fab.style.display = '';
     const container = document.getElementById('kundenContent');
     if (container) {
       container.innerHTML = `
